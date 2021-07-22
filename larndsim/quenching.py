@@ -9,10 +9,12 @@ from numba import cuda
 from . import consts
 
 import logging
+
 logging.basicConfig()
 logger = logging.getLogger('quenching')
 logger.setLevel(logging.WARNING)
 logger.info("QUENCHING MODULE PARAMETERS")
+
 
 @cuda.jit
 def quench(tracks, mode):
@@ -36,7 +38,7 @@ def quench(tracks, mode):
         if mode == consts.box:
             # Baller, 2013 JINST 8 P08005
             csi = consts.beta * dEdx / (consts.eField * consts.lArDensity)
-            recomb = max(0, log(consts.alpha + csi)/csi)
+            recomb = max(0, log(consts.alpha + csi) / csi)
         elif mode == consts.birks:
             # Amoruso, et al NIM A 523 (2004) 275
             recomb = consts.Ab / (1 + consts.kb * dEdx / (consts.eField * consts.lArDensity))
@@ -47,3 +49,31 @@ def quench(tracks, mode):
             raise RuntimeError("Invalid recombination value")
 
         tracks[itrk]["n_electrons"] = recomb * dE * consts.MeVToElectrons
+
+
+try:
+    import eagerpy as ep
+
+
+    def quench_with_diff(tracks, mode):
+        tracks_ep = ep.astensor(tracks)
+        dEdx = tracks_ep[:]["dEdx"]
+        dE = tracks_ep[:]["dE"]
+
+        if mode == consts.box:
+            # Baller, 2013 JINST 8 P08005
+            csi = consts.beta * dEdx / (consts.eField * consts.lArDensity)
+            recomb = ep.maximum(0, ep.log(consts.alpha + csi) / csi)
+        elif mode == consts.birks:
+            # Amoruso, et al NIM A 523 (2004) 275
+            recomb = consts.Ab / (1 + consts.kb * dEdx / (consts.eField * consts.lArDensity))
+        else:
+            raise ValueError("Invalid recombination mode: must be 'box' or 'birks'")
+
+        if ep.isnan(recomb).any():
+            raise RuntimeError("Invalid recombination value")
+
+        tracks[:]["n_electrons"] = (recomb * dE * consts.MeVToElectrons).raw
+
+except ImportError:
+    pass

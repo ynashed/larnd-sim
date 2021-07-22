@@ -1,3 +1,4 @@
+eagerpy
 numpy
 pytest
 numba
