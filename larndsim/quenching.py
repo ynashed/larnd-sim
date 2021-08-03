@@ -55,10 +55,10 @@ try:
     import eagerpy as ep
 
 
-    def quench_with_diff(tracks, mode):
+    def quench_with_diff(tracks, mode, fields):
         tracks_ep = ep.astensor(tracks)
-        dEdx = tracks_ep[:]["dEdx"]
-        dE = tracks_ep[:]["dE"]
+        dEdx = tracks_ep[:, fields.index("dEdx")]
+        dE = tracks_ep[:, fields.index("dE")]
 
         if mode == consts.box:
             # Baller, 2013 JINST 8 P08005
@@ -73,7 +73,7 @@ try:
         if ep.isnan(recomb).any():
             raise RuntimeError("Invalid recombination value")
 
-        tracks[:]["n_electrons"] = (recomb * dE * consts.MeVToElectrons).raw
+        tracks[:, fields.index("n_electrons")] = (recomb * dE * consts.MeVToElectrons).raw
 
 except ImportError:
     pass
