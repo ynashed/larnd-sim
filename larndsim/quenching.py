@@ -49,31 +49,3 @@ def quench(tracks, mode):
             raise RuntimeError("Invalid recombination value")
 
         tracks[itrk]["n_electrons"] = recomb * dE * consts.MeVToElectrons
-
-
-try:
-    import eagerpy as ep
-
-
-    def quench_with_diff(tracks, mode, fields):
-        tracks_ep = ep.astensor(tracks)
-        dEdx = tracks_ep[:, fields.index("dEdx")]
-        dE = tracks_ep[:, fields.index("dE")]
-
-        if mode == consts.box:
-            # Baller, 2013 JINST 8 P08005
-            csi = consts.beta * dEdx / (consts.eField * consts.lArDensity)
-            recomb = ep.maximum(0, ep.log(consts.alpha + csi) / csi)
-        elif mode == consts.birks:
-            # Amoruso, et al NIM A 523 (2004) 275
-            recomb = consts.Ab / (1 + consts.kb * dEdx / (consts.eField * consts.lArDensity))
-        else:
-            raise ValueError("Invalid recombination mode: must be 'box' or 'birks'")
-
-        if ep.isnan(recomb).any():
-            raise RuntimeError("Invalid recombination value")
-
-        tracks[:, fields.index("n_electrons")] = (recomb * dE * consts.MeVToElectrons).raw
-
-except ImportError:
-    pass

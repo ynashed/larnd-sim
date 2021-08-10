@@ -20,7 +20,7 @@ def get_pixels(tracks, active_pixels, neighboring_pixels, n_pixels_list, radius)
     and calculates all impacted pixels by the track segment
 
     Args:
-        track (:obj:`numpy.ndarray`): array where we store the
+        tracks (:obj:`numpy.ndarray`): array where we store the
             track segments information
         active_pixels (:obj:`numpy.ndarray`): array where we store
             the IDs of the pixels directly below the projection of
