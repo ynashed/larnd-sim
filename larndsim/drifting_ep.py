@@ -4,6 +4,7 @@ electrons towards the anode.
 """
 
 import eagerpy as ep
+import numpy as np
 from . import consts
 from .consts import tpc_borders
 
@@ -28,13 +29,27 @@ def drift(tracks, fields):
 
     Args:
         tracks (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): array containing the tracks segment information
-        fields (:obj: `string list`) a list of field/column names of the tracks structured array
+        fields (list): an ordered string list of field/column name of the tracks structured array
     """
     tracks_ep = ep.astensor(tracks)
-    # TODO: Figure out what to do with pixel plane and tpc borders
-    pixel_plane = 0
+    borders_ep = ep.from_numpy(tracks_ep, consts.tpc_borders)
+    zMin = ep.minimum(borders_ep[:, 2, 1] - 2e-2, borders_ep[:, 2, 0] - 2e-2)
+    zMax = ep.maximum(borders_ep[:, 2, 1] + 2e-2, borders_ep[:, 2, 0] + 2e-2)
 
-    z_anode = tpc_borders[pixel_plane][2][0]
+    cond = tracks_ep[:, fields.index("x")][..., ep.newaxis] >= borders_ep[:, 0, 0][ep.newaxis, ...] - 2e-2
+    cond = ep.logical_and(
+           tracks_ep[:, fields.index("x")][..., ep.newaxis] <= borders_ep[:, 0, 1][ep.newaxis, ...] + 2e-2, cond)
+    cond = ep.logical_and(
+           tracks_ep[:, fields.index("y")][..., ep.newaxis] >= borders_ep[:, 1, 0][ep.newaxis, ...] - 2e-2, cond)
+    cond = ep.logical_and(
+           tracks_ep[:, fields.index("y")][..., ep.newaxis] <= borders_ep[:, 1, 1][ep.newaxis, ...] + 2e-2, cond)
+    cond = ep.logical_and(tracks_ep[:, fields.index("z")][..., ep.newaxis] >= zMin[np.newaxis, ...], cond)
+    cond = ep.logical_and(tracks_ep[:, fields.index("z")][..., ep.newaxis] <= zMax[np.newaxis, ...], cond)
+    pixel_plane = cond.astype(int).argmax(axis=-1)
+    tracks[:, fields.index("pixel_plane")] = pixel_plane.raw
+    mask = cond.sum(axis=-1) >= 1
+
+    z_anode = ep.stack([borders_ep[i][2][0] for i in pixel_plane])
     drift_distance = ep.abs(tracks_ep[:, fields.index("z")] - z_anode) - 0.5
     drift_start = ep.abs(ep.minimum(tracks_ep[:, fields.index("z_start")],
                                     tracks_ep[:, fields.index("z_end")]) - z_anode) - 0.5
@@ -43,12 +58,12 @@ def drift(tracks, fields):
     drift_time = drift_distance / consts.vdrift
     lifetime_red = ep.exp(-drift_time / consts.lifetime)
 
-    tracks[:, fields.index("n_electrons")] = (tracks_ep[:, fields.index("n_electrons")] * lifetime_red).raw
+    tracks[:, fields.index("n_electrons")] = (tracks_ep[:, fields.index("n_electrons")] * lifetime_red * mask).raw
 
-    tracks[:, fields.index("long_diff")] = ep.sqrt((drift_time + 0.5 / consts.vdrift) * 2 * consts.long_diff).raw
-    tracks[:, fields.index("tran_diff")] = ep.sqrt((drift_time + 0.5 / consts.vdrift) * 2 * consts.tran_diff).raw
-    tracks[:, fields.index("t")] = (tracks_ep[:, fields.index("t")] + drift_time).raw
-    tracks[:, fields.index("t_start")] = (tracks_ep[:, fields.index("t_start")] +
-                                          ep.minimum(drift_start, drift_end) / consts.vdrift).raw
-    tracks[:, fields.index("t_end")] = (tracks_ep[:, fields.index("t_end")] +
-                                        ep.maximum(drift_start, drift_end) / consts.vdrift).raw
+    tracks[:, fields.index("long_diff")] = ep.sqrt((drift_time + 0.5 / consts.vdrift) * 2 * consts.long_diff * mask).raw
+    tracks[:, fields.index("tran_diff")] = ep.sqrt((drift_time + 0.5 / consts.vdrift) * 2 * consts.tran_diff * mask).raw
+    tracks[:, fields.index("t")] = ((tracks_ep[:, fields.index("t")] + drift_time) * mask).raw
+    tracks[:, fields.index("t_start")] = ((tracks_ep[:, fields.index("t_start")] +
+                                          (ep.minimum(drift_start, drift_end) / consts.vdrift)) * mask).raw
+    tracks[:, fields.index("t_end")] = ((tracks_ep[:, fields.index("t_end")] +
+                                        (ep.maximum(drift_start, drift_end) / consts.vdrift)) * mask).raw

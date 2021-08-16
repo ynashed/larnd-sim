@@ -25,7 +25,7 @@ def quench(tracks, mode, fields):
     Args:
         tracks (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): array containing the tracks segment information
         mode (int): recombination model.
-        fields (:obj: `string list`) a list of field/column names of the tracks structured array
+        fields (list): an ordered string list of field/column name of the tracks structured array
     """
     tracks_ep = ep.astensor(tracks)
     dEdx = tracks_ep[:, fields.index("dEdx")]

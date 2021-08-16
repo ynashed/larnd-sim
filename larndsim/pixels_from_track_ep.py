@@ -13,41 +13,42 @@ logger = logging.getLogger('pixels_from_track')
 logger.setLevel(logging.WARNING)
 logger.info("PIXEL_FROM_TRACK MODULE PARAMETERS")
 
-# @cuda.jit
-# def get_pixels(tracks, active_pixels, neighboring_pixels, n_pixels_list, radius):
-#     """
-#     For all tracks, takes the xy start and end position
-#     and calculates all impacted pixels by the track segment
-#
-#     Args:
-#         tracks (:obj:`numpy.ndarray`): array where we store the
-#             track segments information
-#         active_pixels (:obj:`numpy.ndarray`): array where we store
-#             the IDs of the pixels directly below the projection of
-#             the segments
-#         neighboring_pixels (:obj:`numpy.ndarray`): array where we store
-#             the IDs of the pixels directly below the projection of
-#             the segments and the ones next to them
-#         n_pixels_list (:obj:`numpy.ndarray`): number of total involved
-#             pixels
-#         radius (int): number of pixels around the active pixels that
-#             we are considering
-#     """
-#     itrk = cuda.grid(1)
-#     if itrk < tracks.shape[0]:
-#         t = tracks[itrk]
-#         this_border = tpc_borders[int(t["pixel_plane"])]
-#         start_pixel = ((t["x_start"] - this_border[0][0]) // pixel_pitch + n_pixels[0]*t["pixel_plane"],
-#                        (t["y_start"] - this_border[1][0]) // pixel_pitch)
-#         end_pixel = ((t["x_end"] - this_border[0][0]) // pixel_pitch + n_pixels[0]*t["pixel_plane"],
-#                      (t["y_end"]- this_border[1][0]) // pixel_pitch)
-#
-#         get_active_pixels(start_pixel[0], start_pixel[1],
-#                           end_pixel[0], end_pixel[1],
-#                           active_pixels[itrk])
-#         n_pixels_list[itrk] = get_neighboring_pixels(active_pixels[itrk],
-#                                                      radius,
-#                                                      neighboring_pixels[itrk])
+def get_pixels(tracks, active_pixels, neighboring_pixels, n_pixels_list, radius, fields):
+    """
+    For all tracks, takes the xy start and end position
+    and calculates all impacted pixels by the track segment
+
+    Args:
+        tracks (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): array where we store the
+            track segments information
+        active_pixels (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): array where we store
+            the IDs of the pixels directly below the projection of
+            the segments
+        neighboring_pixels (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): array where we store
+            the IDs of the pixels directly below the projection of
+            the segments and the ones next to them
+        n_pixels_list (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): number of total involved
+            pixels
+        radius (int): number of pixels around the active pixels that
+            we are considering
+        fields (list): an ordered string list of field/column name of the tracks structured array
+    """
+    tracks_ep = ep.astensor(tracks)
+    # TODO: figure out what to do with pixel plane
+    this_border = tpc_borders[0]  #int(tracks_ep[:, fields.index("pixel_plane")])]
+    start_pixel = ((tracks_ep[:, fields.index("x_start")] - this_border[0][0]) // pixel_pitch +
+                   n_pixels[0] * tracks_ep[:, fields.index("pixel_plane")],
+                   (tracks_ep[:, fields.index("y_start")] - this_border[1][0]) // pixel_pitch)
+    end_pixel = ((tracks_ep[:, fields.index("x_end")] - this_border[0][0]) // pixel_pitch +
+                 n_pixels[0] * tracks_ep[:, fields.index("pixel_plane")],
+                 (tracks_ep[:, fields.index("y_end")] - this_border[1][0]) // pixel_pitch)
+
+    get_active_pixels(start_pixel[0], start_pixel[1],
+                      end_pixel[0], end_pixel[1],
+                      active_pixels[itrk])
+    n_pixels_list[itrk] = get_neighboring_pixels(active_pixels[itrk],
+                                                 radius,
+                                                 neighboring_pixels[itrk])
 #
 # @cuda.jit(device=True)
 # def get_active_pixels(x0, y0, x1, y1, tot_pixels):

@@ -27,7 +27,7 @@ def time_intervals(event_id_map, tracks, fields):
             the event ID corresponding to each track
         tracks (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): array containing the segment
             information
-        fields (:obj: `string list`) a list of field/column names of the tracks structured array
+        fields (list): an ordered string list of field/column name of the tracks structured array
     Returns:
         track_starts (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): array where
             we store the segments start time
