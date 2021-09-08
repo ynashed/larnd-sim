@@ -36,8 +36,8 @@ def time_intervals(event_id_map, tracks, fields):
     """
     event_id_map_ep = ep.astensor(event_id_map)
     tracks_ep = ep.astensor(tracks)
-    tracks_t_end = tracks_ep[:, fields.indexof("t_end")]
-    tracks_t_start = tracks_ep[:, fields.indexof("t_start")]
+    tracks_t_end = tracks_ep[:, fields.index("t_end")]
+    tracks_t_start = tracks_ep[:, fields.index("t_start")]
     t_end = ep.minimum(ep.full_like(tracks_t_end, time_interval[1]),
                        ((tracks_t_end + consts.time_padding + 0.5 / consts.vdrift) / consts.t_sampling) * consts.t_sampling)
     t_start = ep.maximum(ep.full_like(tracks_t_start, time_interval[0]),
@@ -48,76 +48,76 @@ def time_intervals(event_id_map, tracks, fields):
     return track_starts, time_max
 
 
-# def z_interval(start_point, end_point, x_p, y_p, tolerance):
-#     """
-#     Here we calculate the interval in the drift direction for the pixel pID
-#     using the impact factor
-#
-#     Args:
-#         start_point (tuple): coordinates of the segment start
-#         end_point (tuple): coordinates of the segment end
-#         x_p (float): pixel center `x` coordinate
-#         y_p (float): pixel center `y` coordinate
-#         tolerance (float): maximum distance between the pixel center and
-#             the segment
-#
-#     Returns:
-#         tuple: `z` coordinate of the point of closest approach (POCA),
-#         `z` coordinate of the first slice, `z` coordinate of the last slice.
-#         (0,0,0) if POCA > tolerance.
-#     """
-#
-#     if start_point[0] > end_point[0]:
-#         start = end_point
-#         end = start_point
-#     elif start_point[0] < end_point[0]:
-#         start = start_point
-#         end = end_point
-#     else:  # Limit case that we should probably manage better
-#         return 0, 0, 0
-#
-#     xs, ys = start[0], start[1]
-#     xe, ye = end[0], end[1]
-#
-#     m = (ye - ys) / (xe - xs)
-#     q = (xe * ys - xs * ye) / (xe - xs)
-#
-#     a, b, c = m, -1, q
-#
-#     x_poca = (b * (b * x_p - a * y_p) - a * c) / (a * a + b * b)
-#
-#     length = sqrt((end[0] - start[0]) ** 2 + (end[1] - start[1]) ** 2 + (end[2] - start[2]) ** 2)
-#     dir3D = (end[0] - start[0]) / length, (end[1] - start[1]) / length, (end[2] - start[2]) / length
-#
-#     if x_poca < start[0]:
-#         doca = sqrt((x_p - start[0]) ** 2 + (y_p - start[1]) ** 2)
-#         x_poca = start[0]
-#     elif x_poca > end[0]:
-#         doca = sqrt((x_p - end[0]) ** 2 + (y_p - end[1]) ** 2)
-#         x_poca = end[0]
-#     else:
-#         doca = abs(a * x_p + b * y_p + c) / sqrt(a * a + b * b)
-#
-#     z_poca = start[2] + (x_poca - start[0]) / dir3D[0] * dir3D[2]
-#
-#     plusDeltaZ, minusDeltaZ = 0, 0
-#
-#     if tolerance > doca:
-#         length2D = sqrt((xe - xs) ** 2 + (ye - ys) ** 2)
-#         dir2D = (end[0] - start[0]) / length2D, (end[1] - start[1]) / length2D
-#         deltaL2D = sqrt(tolerance ** 2 - doca ** 2)  # length along the track in 2D
-#
-#         x_plusDeltaL = x_poca + deltaL2D * dir2D[0]  # x coordinates of the tolerance range
-#         x_minusDeltaL = x_poca - deltaL2D * dir2D[0]
-#         plusDeltaL = (x_plusDeltaL - start[0]) / dir3D[0]  # length along the track in 3D
-#         minusDeltaL = (x_minusDeltaL - start[0]) / dir3D[0]  # of the tolerance range
-#
-#         plusDeltaZ = start[2] + dir3D[2] * plusDeltaL  # z coordinates of the
-#         minusDeltaZ = start[2] + dir3D[2] * minusDeltaL  # tolerance range
-#
-#         return z_poca, min(minusDeltaZ, plusDeltaZ), max(minusDeltaZ, plusDeltaZ)
-#
-#     return 0, 0, 0
+def z_interval(start_point, end_point, x_p, y_p, tolerance, eps=1e-12):
+    """
+    Here we calculate the interval in the drift direction for the pixel pID
+    using the impact factor
+
+    Args:
+        start_point (tuple): coordinates of the segment start
+        end_point (tuple): coordinates of the segment end
+        x_p (float): pixel center `x` coordinate
+        y_p (float): pixel center `y` coordinate
+        tolerance (float): maximum distance between the pixel center and
+            the segment
+
+    Returns:
+        tuple: `z` coordinate of the point of closest approach (POCA),
+        `z` coordinate of the first slice, `z` coordinate of the last slice.
+        (0,0,0) if POCA > tolerance.
+    """
+    cond = start_point[:, 0] < end_point[:, 0]
+    start = ep.where(cond[..., ep.newaxis], start_point, end_point)
+    end = ep.where(cond[..., ep.newaxis], end_point, start_point)
+
+    xs, ys = start[:, 0], start[:, 1]
+    xe, ye = end[:, 0], end[:, 1]
+
+    m = (ye - ys) / (xe - xs + eps)
+    q = (xe * ys - xs * ye) / (xe - xs + eps)
+
+    a, b, c = m[...,ep.newaxis], -1, q[...,ep.newaxis]
+
+    x_poca = (b * (b * x_p[...,0] - a * y_p[...,0]) - a * c) / (a * a + b * b)
+    doca = ep.abs(a * x_p[...,0] + b * y_p[...,0] + c) / ep.sqrt(a * a  + b * b)
+
+    vec3D = end - start
+    length3D = ep.norms.l2(vec3D, axis=1, keepdims=True)
+    dir3D = vec3D / length3D
+
+    #TODO: Fixme. Not efficient. Should just flip start and end
+    end = end[...,ep.newaxis]
+    start = start[..., ep.newaxis]
+    cond2 = x_poca > end[:, 0]
+    cond1 = x_poca < start[:, 0]
+    doca = ep.where(cond2,
+                    ep.sqrt((x_p[...,0] - end[:, 0]) ** 2 + (y_p[...,0] - end[:, 1]) ** 2),
+                    doca)
+    doca = ep.where(cond1,
+                    ep.sqrt((x_p[...,0] - start[:, 0]) ** 2 + (y_p[...,0] - start[:, 1]) ** 2),
+                    doca)
+
+    x_poca = ep.where(cond2, end[:, 0], x_poca)
+    x_poca = ep.where(cond1, start[:, 0], x_poca)
+    z_poca = start[:, 2] + (x_poca - start[:, 0]) / dir3D[:, 0][..., ep.newaxis] * dir3D[:, 2][..., ep.newaxis]
+
+    length2D = ep.norms.l2(vec3D[...,:2], axis=1, keepdims=True)
+    dir2D = vec3D[...,:2] / length2D
+    deltaL2D = ep.sqrt(tolerance[..., ep.newaxis] ** 2 - doca ** 2)  # length along the track in 2D
+
+    x_plusDeltaL = x_poca + deltaL2D * dir2D[:,0][..., ep.newaxis]  # x coordinates of the tolerance range
+    x_minusDeltaL = x_poca - deltaL2D * dir2D[:,0][..., ep.newaxis]
+    plusDeltaL = (x_plusDeltaL - start[:,0,:]) / dir3D[:,0][..., ep.newaxis]  # length along the track in 3D
+    minusDeltaL = (x_minusDeltaL - start[:,0,:]) / dir3D[:,0][..., ep.newaxis]  # of the tolerance range
+
+    plusDeltaZ = start[:,2,:] + dir3D[:,2][..., ep.newaxis] * plusDeltaL  # z coordinates of the
+    minusDeltaZ = start[:,2,:] + dir3D[:,2][..., ep.newaxis] * minusDeltaL  # tolerance range
+
+    cond = tolerance[..., ep.newaxis] > doca
+    z_poca = ep.where(cond, z_poca, 0)
+    z_min_delta = ep.where(cond, ep.minimum(minusDeltaZ, plusDeltaZ), 0)
+    z_max_delta = ep.where(cond, ep.maximum(minusDeltaZ, plusDeltaZ), 0)
+    return z_poca, z_min_delta, z_max_delta
 #
 #
 # def _b(x, y, z, start, sigmas, segment, Deltar):
@@ -213,134 +213,133 @@ def time_intervals(event_id_map, tracks, fields):
 #     return a * truncexpon(-t, -shifted_t0, b) + (1 - a) * truncexpon(-t, -shifted_t0, c)
 #
 #
-# def track_point(start, direction, z):
-#     """
-#     This function returns the segment coordinates for a point along the `z` coordinate
+def track_point(start, direction, z):
+    """
+    This function returns the segment coordinates for a point along the `z` coordinate
+
+    Args:
+        start (tuple): start coordinates
+        direction (tuple): direction coordinates
+        z (float): `z` coordinate corresponding to the `x`, `y` coordinates
+
+    Returns:
+        tuple: the (x,y) pair of coordinates for the segment at `z`
+    """
+    l = (z - start[:, 2][...,ep.newaxis]) / direction[:, 2][...,ep.newaxis]
+    xl = start[:, 0][...,ep.newaxis] + l * direction[:, 0][...,ep.newaxis]
+    yl = start[:, 1][...,ep.newaxis] + l * direction[:, 1][...,ep.newaxis]
+
+    return xl, yl
+
 #
-#     Args:
-#         start (tuple): start coordinates
-#         direction (tuple): direction coordinates
-#         z (float): `z` coordinate corresponding to the `x`, `y` coordinates
-#
-#     Returns:
-#         tuple: the (x,y) pair of coordinates for the segment at `z`
-#     """
-#     l = (z - start[2]) / direction[2]
-#     xl = start[0] + l * direction[0]
-#     yl = start[1] + l * direction[1]
-#
-#     return xl, yl
-#
-#
-# def get_pixel_coordinates(pixel_id):
-#     """
-#     Returns the coordinates of the pixel center given the pixel ID
-#     """
-#     plane_id = pixel_id[0] // n_pixels[0]
-#
-#     this_border = tpc_borders[int(plane_id)]
-#     pix_x = (pixel_id[0] - n_pixels[0] * plane_id) * pixel_pitch + this_border[0][0]
-#     pix_y = pixel_id[1] * pixel_pitch + this_border[1][0]
-#
-#     return pix_x, pix_y
-#
-#
-# def tracks_current(signals, pixels, tracks):
-#     """
-#     This CUDA kernel calculates the charge induced on the pixels by the input tracks.
-#
-#     Args:
-#         signals (:obj:`numpy.ndarray`): empty 3D array with dimensions S x P x T,
-#             where S is the number of track segments, P is the number of pixels, and T is
-#             the number of time ticks. The output is stored here.
-#         pixels (:obj:`numpy.ndarray`): 3D array with dimensions S x P x 2, where S is
-#             the number of track segments, P is the number of pixels and the third dimension
-#             contains the two pixel ID numbers.
-#         tracks (:obj:`numpy.ndarray`): 2D array containing the detector segments.
-#     """
-#     itrk, ipix, it = cuda.grid(3)
-#
-#     if itrk < signals.shape[0] and ipix < signals.shape[1] and it < signals.shape[2]:
-#         t = tracks[itrk]
-#         pID = pixels[itrk][ipix]
-#         if pID[0] >= 0 and pID[1] >= 0:
-#
-#             # Pixel coordinates
-#             x_p, y_p = get_pixel_coordinates(pID)
-#             x_p += pixel_pitch / 2
-#             y_p += pixel_pitch / 2
-#
-#             if t["z_start"] < t["z_end"]:
-#                 start = (t["x_start"], t["y_start"], t["z_start"])
-#                 end = (t["x_end"], t["y_end"], t["z_end"])
-#             else:
-#                 end = (t["x_start"], t["y_start"], t["z_start"])
-#                 start = (t["x_end"], t["y_end"], t["z_end"])
-#
-#             segment = (end[0] - start[0], end[1] - start[1], end[2] - start[2])
-#             length = sqrt(segment[0] ** 2 + segment[1] ** 2 + segment[2] ** 2)
-#
-#             direction = (segment[0] / length, segment[1] / length, segment[2] / length)
-#             sigmas = (t["tran_diff"], t["tran_diff"], t["long_diff"])
-#
-#             # The impact factor is the the size of the transverse diffusion or, if too small,
-#             # half the diagonal of the pixel pad
-#             impact_factor = max(sqrt((5 * sigmas[0]) ** 2 + (5 * sigmas[1]) ** 2),
-#                                 sqrt(pixel_pitch ** 2 + pixel_pitch ** 2) / 2) * 2
-#
-#             z_poca, z_start, z_end = z_interval(start, end, x_p, y_p, impact_factor)
-#             #             print(z_poca,z_start,z_end,start[2])
-#             if z_poca != 0:
-#
-#                 z_start_int = z_start - 4 * sigmas[2]
-#                 z_end_int = z_end + 4 * sigmas[2]
-#
-#                 x_start, y_start = track_point(start, direction, z_start)
-#                 x_end, y_end = track_point(start, direction, z_end)
-#
-#                 y_step = (abs(y_end - y_start) + 8 * sigmas[1]) / (consts.sampled_points - 1)
-#                 x_step = (abs(x_end - x_start) + 8 * sigmas[0]) / (consts.sampled_points - 1)
-#
-#                 z_sampling = consts.t_sampling / 2.
-#                 z_steps = max(consts.sampled_points, ceil(abs(z_end_int - z_start_int) / z_sampling))
-#
-#                 z_step = (z_end_int - z_start_int) / (z_steps - 1)
-#                 t_start = max(time_interval[0],
-#                               (t["t_start"] - consts.time_padding) // consts.t_sampling * consts.t_sampling)
-#
-#                 total_current = 0
-#                 total_charge = 0
-#
-#                 time_tick = t_start + it * consts.t_sampling
-#                 for iz in range(z_steps):
-#
-#                     z = z_start_int + iz * z_step
-#                     t0 = (abs(z - tpc_borders[t["pixel_plane"]][2][0]) - 0.5) / consts.vdrift
-#
-#                     # FIXME: this sampling is far from ideal, we should sample around the track
-#                     # and not in a cube containing the track
-#                     for ix in range(consts.sampled_points):
-#
-#                         x = x_start + sign(direction[0]) * (ix * x_step - 4 * sigmas[0])
-#                         x_dist = abs(x_p - x)
-#
-#                         if x_dist > pixel_pitch / 2:
-#                             continue
-#
-#                         for iy in range(consts.sampled_points):
-#
-#                             y = y_start + sign(direction[1]) * (iy * y_step - 4 * sigmas[1])
-#                             y_dist = abs(y_p - y)
-#
-#                             if y_dist > pixel_pitch / 2:
-#                                 continue
-#
-#                             charge = rho((x, y, z), t["n_electrons"], start, sigmas, segment) \
-#                                      * abs(x_step) * abs(y_step) * abs(z_step)
-#
-#                             total_current += current_model(time_tick, t0, x_dist, y_dist) * charge * consts.e_charge
-#
-#                     signals[itrk, ipix, it] = total_current
+def get_pixel_coordinates(pixels):
+    """
+    Returns the coordinates of the pixel center given the pixel IDs
+    """
+    tpc_borders_ep = ep.from_numpy(pixels, tpc_borders).float32()
+    plane_id = pixels[..., 0] // n_pixels[0]
+    borders = ep.stack([tpc_borders_ep[x.astype(int)] for x in plane_id])
+
+    pix_x = (pixels[..., 0] - n_pixels[0] * plane_id) * pixel_pitch + borders[..., 0, 0]
+    pix_y = pixels[..., 1] * pixel_pitch + borders[..., 1, 0]
+    return pix_x[...,ep.newaxis], pix_y[...,ep.newaxis]
+
+
+def tracks_current(pixels, tracks, fields):
+    """
+    This function calculates the charge induced on the pixels by the input tracks.
+
+    Args:
+        pixels (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): 3D array with dimensions S x P x 2, where S is
+            the number of track segments, P is the number of pixels and the third dimension
+            contains the two pixel ID numbers.
+        tracks (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): 2D array containing the detector segments.
+        fields (list): an ordered string list of field/column name of the tracks structured array
+    Returns:
+        signals (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): 3D array with dimensions S x P x T,
+            where S is the number of track segments, P is the number of pixels, and T is
+            the number of time ticks.
+    """
+    pixels = ep.astensor(pixels)
+    tracks_ep = ep.astensor(tracks)
+
+    # Pixel coordinates
+    x_p, y_p = get_pixel_coordinates(pixels)
+    x_p += pixel_pitch / 2
+    y_p += pixel_pitch / 2
+
+    start_coords = ep.stack([tracks_ep[:, fields.index("x_start")],
+                             tracks_ep[:, fields.index("y_start")],
+                             tracks_ep[:, fields.index("z_start")]], axis=1)
+    end_coords = ep.stack([tracks_ep[:, fields.index("x_end")],
+                           tracks_ep[:, fields.index("y_end")],
+                           tracks_ep[:, fields.index("z_end")]], axis=1)
+    cond = tracks_ep[:, fields.index("z_start")] < tracks_ep[:, fields.index("z_end")]
+    start = ep.where(cond[...,ep.newaxis], start_coords, end_coords)
+    end = ep.where(cond[...,ep.newaxis], end_coords, start_coords)
+    segment = end - start
+    length = ep.norms.l2(end, axis=1, keepdims=True)
+
+    direction = segment / length
+    sigmas = ep.stack([tracks_ep[:, fields.index("tran_diff")],
+                       tracks_ep[:, fields.index("tran_diff")],
+                       tracks_ep[:, fields.index("long_diff")]], axis=1)
+
+    # The impact factor is the the size of the transverse diffusion or, if too small,
+    # half the diagonal of the pixel pad
+    impact_factor = ep.maximum(ep.sqrt((5 * sigmas[:, 0]) ** 2 + (5 * sigmas[:, 1]) ** 2),
+                               ep.full_like(sigmas[:, 0], sqrt(pixel_pitch ** 2 + pixel_pitch ** 2) / 2)) * 2
+    z_poca, z_start, z_end = z_interval(start, end, x_p, y_p, impact_factor)
+
+    z_start_int = z_start - 4 * sigmas[:, 2][...,ep.newaxis]
+    z_end_int = z_end + 4 * sigmas[:, 2][...,ep.newaxis]
+
+    x_start, y_start = track_point(start, direction, z_start)
+    x_end, y_end = track_point(start, direction, z_end)
+
+    y_step = (ep.abs(y_end - y_start) + 8 * sigmas[:, 1][...,ep.newaxis]) / (consts.sampled_points - 1)
+    x_step = (ep.abs(x_end - x_start) + 8 * sigmas[:, 0][...,ep.newaxis]) / (consts.sampled_points - 1)
+
+    z_sampling = consts.t_sampling / 2.
+    z_steps = ep.maximum(consts.sampled_points, ((ep.abs(z_end_int - z_start_int) / z_sampling)+1).astype(int))
+
+    z_step = (z_end_int - z_start_int) / (z_steps - 1)
+    t_start = ep.maximum(time_interval[0],
+                         (tracks_ep[:, fields.index("t_start")] - consts.time_padding)
+                         // consts.t_sampling * consts.t_sampling)
+    total_current = 0
+    total_charge = 0
+
+    time_tick = t_start + it * consts.t_sampling
+    for iz in range(z_steps):
+
+        z = z_start_int + iz * z_step
+        t0 = (abs(z - tpc_borders[t["pixel_plane"]][2][0]) - 0.5) / consts.vdrift
+
+        # FIXME: this sampling is far from ideal, we should sample around the track
+        # and not in a cube containing the track
+        for ix in range(consts.sampled_points):
+
+            x = x_start + sign(direction[0]) * (ix * x_step - 4 * sigmas[0])
+            x_dist = abs(x_p - x)
+
+            if x_dist > pixel_pitch / 2:
+                continue
+
+            for iy in range(consts.sampled_points):
+
+                y = y_start + sign(direction[1]) * (iy * y_step - 4 * sigmas[1])
+                y_dist = abs(y_p - y)
+
+                if y_dist > pixel_pitch / 2:
+                    continue
+
+                charge = rho((x, y, z), t["n_electrons"], start, sigmas, segment) \
+                         * abs(x_step) * abs(y_step) * abs(z_step)
+
+                total_current += current_model(time_tick, t0, x_dist, y_dist) * charge * consts.e_charge
+
+        signals[itrk, ipix, it] = total_current
 #
 #
 # def sign(x):

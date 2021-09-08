@@ -32,7 +32,7 @@ def drift(tracks, fields):
         fields (list): an ordered string list of field/column name of the tracks structured array
     """
     tracks_ep = ep.astensor(tracks)
-    tpc_borders_ep = ep.from_numpy(tracks_ep, consts.tpc_borders)
+    tpc_borders_ep = ep.from_numpy(tracks_ep, consts.tpc_borders).float32()
     zMin = ep.minimum(tpc_borders_ep[:, 2, 1] - 2e-2, tpc_borders_ep[:, 2, 0] - 2e-2)
     zMax = ep.maximum(tpc_borders_ep[:, 2, 1] + 2e-2, tpc_borders_ep[:, 2, 0] + 2e-2)
 

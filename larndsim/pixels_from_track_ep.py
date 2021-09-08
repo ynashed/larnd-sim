@@ -35,7 +35,7 @@ def get_pixels(tracks, fields):
             pixels
     """
     tracks_ep = ep.astensor(tracks)
-    tpc_borders_ep = ep.from_numpy(tracks_ep, tpc_borders)
+    tpc_borders_ep = ep.from_numpy(tracks_ep, tpc_borders).float32()
     borders = ep.stack([tpc_borders_ep[x.astype(int)] for x in tracks_ep[:, fields.index("pixel_plane")]])
     start_pixel = ep.stack([(tracks_ep[:, fields.index("x_start")] - borders[:, 0, 0]) // pixel_pitch +
                             n_pixels[0] * tracks_ep[:, fields.index("pixel_plane")],
