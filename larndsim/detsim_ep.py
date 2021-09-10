@@ -310,34 +310,39 @@ def tracks_current(pixels, tracks, fields):
     total_current = 0
     total_charge = 0
 
-    time_tick = t_start + it * consts.t_sampling
-    for iz in range(z_steps):
+    # time_tick = t_start + it * consts.t_sampling
+    iz = ep.arange(z_steps, 0, z_steps.max().item())
+    z =  z_start_int[...,ep.newaxis] + iz[ep.newaxis, ep.newaxis, :] * z_step[...,ep.newaxis]
+    tpc_borders_ep = ep.from_numpy(pixels, tpc_borders).float32()
+    borders = ep.stack([tpc_borders_ep[x.astype(int)] for x in tracks_ep[:, fields.index("pixel_plane")]])
+    t0 = (ep.abs(z - borders[..., 2, 0, ep.newaxis, ep.newaxis]) - 0.5) / consts.vdrift
+    # FIXME: this sampling is far from ideal, we should sample around the track
+    # and not in a cube containing the track
+    ix = ep.arange(iz, 0, consts.sampled_points)
+    x = x_start[...,ep.newaxis] + \
+        ep.sign(direction[..., 0, ep.newaxis, ep.newaxis]) *\
+        (ix[ep.newaxis, ep.newaxis, :] * x_step[...,ep.newaxis]  - 4 * sigmas[..., 0, ep.newaxis, ep.newaxis])
+    print(x.shape, x_p.shape)
 
-        z = z_start_int + iz * z_step
-        t0 = (abs(z - tpc_borders[t["pixel_plane"]][2][0]) - 0.5) / consts.vdrift
+    x_dist = ep.abs(x_p - x)
+    print(x_dist.shape, pixel_pitch)
+    print(x_dist)
 
-        # FIXME: this sampling is far from ideal, we should sample around the track
-        # and not in a cube containing the track
-        for ix in range(consts.sampled_points):
+    # if x_dist > pixel_pitch / 2:
+    #     continue
 
-            x = x_start + sign(direction[0]) * (ix * x_step - 4 * sigmas[0])
-            x_dist = abs(x_p - x)
+    for iy in range(consts.sampled_points):
 
-            if x_dist > pixel_pitch / 2:
-                continue
+        y = y_start + sign(direction[1]) * (iy * y_step - 4 * sigmas[1])
+        y_dist = abs(y_p - y)
 
-            for iy in range(consts.sampled_points):
+        if y_dist > pixel_pitch / 2:
+            continue
 
-                y = y_start + sign(direction[1]) * (iy * y_step - 4 * sigmas[1])
-                y_dist = abs(y_p - y)
+        charge = rho((x, y, z), t["n_electrons"], start, sigmas, segment) \
+                 * abs(x_step) * abs(y_step) * abs(z_step)
 
-                if y_dist > pixel_pitch / 2:
-                    continue
-
-                charge = rho((x, y, z), t["n_electrons"], start, sigmas, segment) \
-                         * abs(x_step) * abs(y_step) * abs(z_step)
-
-                total_current += current_model(time_tick, t0, x_dist, y_dist) * charge * consts.e_charge
+        total_current += current_model(time_tick, t0, x_dist, y_dist) * charge * consts.e_charge
 
         signals[itrk, ipix, it] = total_current
 #
