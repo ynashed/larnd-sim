@@ -251,7 +251,7 @@ def get_pixel_coordinates(pixels):
     return pix_x[...,ep.newaxis], pix_y[...,ep.newaxis]
 
 
-def tracks_current(pixels, tracks, fields):
+def tracks_current(pixels, tracks, time_max, fields):
     """
     This function calculates the charge induced on the pixels by the input tracks.
 
@@ -260,6 +260,7 @@ def tracks_current(pixels, tracks, fields):
             the number of track segments, P is the number of pixels and the third dimension
             contains the two pixel ID numbers.
         tracks (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): 2D array containing the detector segments.
+        time_max (int) : total number of time ticks (see time_intervals) 
         fields (list): an ordered string list of field/column name of the tracks structured array
     Returns:
         signals (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): 3D array with dimensions S x P x T,
@@ -268,6 +269,7 @@ def tracks_current(pixels, tracks, fields):
     """
     pixels = ep.astensor(pixels)
     tracks_ep = ep.astensor(tracks)
+    it = ep.arange(pixels, 0, time_max)
 
     # Pixel coordinates
     x_p, y_p = get_pixel_coordinates(pixels)
@@ -316,7 +318,7 @@ def tracks_current(pixels, tracks, fields):
     total_current = 0
     total_charge = 0
 
-    time_tick = t_start #+ it * consts.t_sampling
+    time_tick = t_start[:, ep.newaxis] + it * consts.t_sampling
     iz = ep.arange(z_steps, 0, z_steps.max().item())
     z =  z_start_int[...,ep.newaxis] + iz[ep.newaxis, ep.newaxis, :] * z_step[...,ep.newaxis]
     tpc_borders_ep = ep.from_numpy(pixels, tpc_borders).float32()
@@ -343,20 +345,20 @@ def tracks_current(pixels, tracks, fields):
      * ep.abs(x_step[..., ep.newaxis, ep.newaxis, ep.newaxis]) * ep.abs(y_step[..., ep.newaxis, ep.newaxis, ep.newaxis]) * ep.abs(z_step[..., ep.newaxis, ep.newaxis, ep.newaxis])
 
 
-    current = current_model(time_tick[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis], 
-                            t0[:, :, ep.newaxis, ep.newaxis, :], 
-                            x_dist[:, :, :, ep.newaxis, ep.newaxis], 
-                            y_dist[:, :, ep.newaxis, :, ep.newaxis]) * charge * consts.e_charge
+    current = current_model(time_tick[:, ep.newaxis, :, ep.newaxis, ep.newaxis, ep.newaxis], 
+                            t0[:, :, ep.newaxis, ep.newaxis, ep.newaxis, :], 
+                            x_dist[:, :, ep.newaxis, :, ep.newaxis, ep.newaxis], 
+                            y_dist[:, :, ep.newaxis, ep.newaxis, :, ep.newaxis]) * charge[:, :, ep.newaxis, ...] * consts.e_charge
 
     #Remove terms from sum failing pixel_pitch condition
-    current = ep.where(x_dist[..., ep.newaxis, ep.newaxis]>pixel_pitch/2, 0, current)
-    current = ep.where(y_dist[:, :, ep.newaxis, :, ep.newaxis]> pixel_pitch/2, 0, current)
+    current = ep.where(x_dist[:, :, ep.newaxis, :, ep.newaxis, ep.newaxis]>pixel_pitch/2, 0, current)
+    current = ep.where(y_dist[:, :, ep.newaxis, ep.newaxis, :, ep.newaxis]> pixel_pitch/2, 0, current)
 
     #Sum over x, y, z sampling cube
-    total_current = current.sum(axis=(2,3,4))
+    total_current = current.sum(axis=(3,4,5))
 
     #0 signal if z_poca == 0
-    signals = ep.where(z_poca != 0, total_current, 0)
+    signals = ep.where(z_poca[:,:, ep.newaxis] != 0, total_current, 0)
    
     return signals
 
