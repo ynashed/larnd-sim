@@ -18,8 +18,6 @@ logger = logging.getLogger('detsim')
 logger.setLevel(logging.WARNING)
 logger.info("DETSIM MODULE PARAMETERS")
 
-def ceil_hack(input):
-    return ep.astensor(torch.ceil(input.raw))
 
 def time_intervals(event_id_map, tracks, fields):
     """
@@ -48,7 +46,7 @@ def time_intervals(event_id_map, tracks, fields):
                          ((tracks_t_start - consts.time_padding) / consts.t_sampling) * consts.t_sampling)
     t_length = t_end - t_start
     track_starts = (t_start + event_id_map_ep * time_interval[1] * 3).raw
-    time_max = (ep.max(ceil_hack(t_length / consts.t_sampling))).raw
+    time_max = (ep.max((t_length / consts.t_sampling).astype(int)+1)).raw
     return track_starts, time_max
 
 
@@ -131,8 +129,6 @@ def _b(x, y, z, start, sigmas, segment, Deltar):
 
 def erf_hack(input):
     return ep.astensor(torch.erf(input.raw))
-def nan_to_num_hack(input):
-    return ep.astensor(torch.nan_to_num(input.raw))
 
 def rho(point, q, start, sigmas, segment):
     """
@@ -171,7 +167,7 @@ def rho(point, q, start, sigmas, segment):
 
    # if factor and integral:
     expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta + ep.log(factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + ep.log(integral))
-    expo = nan_to_num_hack(expo)
+    expo = ep.where(expo.isnan(), 0, expo)
 
     return expo
 

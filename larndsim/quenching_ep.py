@@ -44,5 +44,5 @@ def quench(tracks, mode, fields):
     if ep.isnan(recomb).any():
         raise RuntimeError("Invalid recombination value")
 
-    tracks[:, fields.index("n_electrons")] = (recomb * dE * consts.MeVToElectrons).raw
+    tracks[:, fields.index("n_electrons")] = (recomb * dE * consts.MeVToElectrons).astype(int).raw
 

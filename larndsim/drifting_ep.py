@@ -59,7 +59,7 @@ def drift(tracks, fields):
     lifetime_red = ep.exp(-drift_time / consts.lifetime)
 
     #TODO: investigate using ep.where instead of masking all values
-    tracks[:, fields.index("n_electrons")] = (tracks_ep[:, fields.index("n_electrons")] * lifetime_red * mask).raw
+    tracks[:, fields.index("n_electrons")] = (tracks_ep[:, fields.index("n_electrons")] * lifetime_red * mask).astype(int).raw
 
     tracks[:, fields.index("long_diff")] = ep.sqrt((drift_time + 0.5 / consts.vdrift) * 2 * consts.long_diff * mask).raw
     tracks[:, fields.index("tran_diff")] = ep.sqrt((drift_time + 0.5 / consts.vdrift) * 2 * consts.tran_diff * mask).raw
