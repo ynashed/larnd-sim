@@ -218,7 +218,7 @@ def current_model(t, t0, x, y):
     shifted_t0 = t0 + t0_params[0] + t0_params[1] * x + t0_params[2] * y + \
                  t0_params[3] * x * y + t0_params[4] * x * x + t0_params[5] * y * y
 
-    a = ep.min(a, 1, keepdims=True)
+    a = ep.minimum(a, 1)
 
     return a * truncexpon(-t, -shifted_t0, b) + (1 - a) * truncexpon(-t, -shifted_t0, c)
 
@@ -326,6 +326,7 @@ def tracks_current(pixels, tracks, fields):
     tpc_borders_ep = ep.from_numpy(pixels, tpc_borders).float32()
     borders = ep.stack([tpc_borders_ep[x.astype(int)] for x in tracks_ep[:, fields.index("pixel_plane")]])
     t0 = (ep.abs(z - borders[..., 2, 0, ep.newaxis, ep.newaxis]) - 0.5) / consts.vdrift
+
     # FIXME: this sampling is far from ideal, we should sample around the track
     # and not in a cube containing the track
     ix = ep.arange(iz, 0, consts.sampled_points)
@@ -335,10 +336,6 @@ def tracks_current(pixels, tracks, fields):
 
     x_dist = ep.abs(x_p - x)
 
-    x_dist = ep.where(x_dist > pixel_pitch / 2, 0, x_dist)
-    # if x_dist > pixel_pitch / 2:
-    #     continue
-
     iy = ep.arange(iz, 0, consts.sampled_points)
 
     y = y_start[...,ep.newaxis] + \
@@ -346,17 +343,26 @@ def tracks_current(pixels, tracks, fields):
         (iy[ep.newaxis, ep.newaxis, :] * y_step[...,ep.newaxis] - 4 * sigmas[..., 1, ep.newaxis, ep.newaxis])
     y_dist = ep.abs(y_p - y)
 
-    y_dist = ep.where(y_dist > pixel_pitch / 2, 0, y_dist)
     charge =  rho((x[:,:, :, ep.newaxis, ep.newaxis], y[:,:, ep.newaxis, :, ep.newaxis], z[:,:, ep.newaxis, ep.newaxis, :]), tracks_ep[:, fields.index("n_electrons")], start, sigmas, segment)\
      * ep.abs(x_step[..., ep.newaxis, ep.newaxis, ep.newaxis]) * ep.abs(y_step[..., ep.newaxis, ep.newaxis, ep.newaxis]) * ep.abs(z_step[..., ep.newaxis, ep.newaxis, ep.newaxis])
 
-    return charge, current_model(time_tick[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis], 
-                                 t0[:, :, ep.newaxis, ep.newaxis, :], 
-                                 x_dist[:, :, :, ep.newaxis, ep.newaxis], 
-                                 y_dist[:, :, ep.newaxis, :, ep.newaxis])
-   # total_current += current_model(time_tick, t0, x_dist, y_dist) * charge * consts.e_charge
 
-   # signals[itrk, ipix, it] = total_current
+    current = current_model(time_tick[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis], 
+                            t0[:, :, ep.newaxis, ep.newaxis, :], 
+                            x_dist[:, :, :, ep.newaxis, ep.newaxis], 
+                            y_dist[:, :, ep.newaxis, :, ep.newaxis]) * charge * consts.e_charge
+
+    #Remove terms from sum failing pixel_pitch condition
+    current = ep.where(x_dist[..., ep.newaxis, ep.newaxis]>pixel_pitch/2, 0, current)
+    current = ep.where(y_dist[:, :, ep.newaxis, :, ep.newaxis]> pixel_pitch/2, 0, current)
+
+    #Sum over x, y, z sampling cube
+    total_current = current.sum(axis=(2,3,4))
+
+    #0 signal if z_poca == 0
+    signals = ep.where(z_poca != 0, total_current, 0)
+   
+    return signals
 
 
 #def sign(x):
