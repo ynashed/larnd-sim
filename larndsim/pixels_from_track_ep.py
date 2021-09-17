@@ -5,6 +5,7 @@ pixels.
 """
 
 import eagerpy as ep
+import numpy as np
 from math import ceil
 from .consts import pixel_pitch, n_pixels, tpc_borders
 
@@ -50,6 +51,7 @@ def get_pixels(tracks, fields):
     max_pixels = int((longest_pix * 4 + 6) * max_radius * 1.5)
     max_active_pixels = int(longest_pix * 1.5)
     active_pixels = get_active_pixels(start_pixel, end_pixel, max_active_pixels)
+
     neighboring_pixels, n_pixels_list = get_neighboring_pixels(active_pixels, max_radius + 1, max_pixels)
     return active_pixels.raw, neighboring_pixels.raw, n_pixels_list
 
@@ -118,7 +120,8 @@ def get_neighboring_pixels(active_pixels, radius, max_pixels):
         n_indices = ep.tile(neighbor_indices, [track.shape[0], 1]) + \
                     ep.tile(track, [1, neighbor_indices.shape[0]]).reshape([-1, 2])
         n_indices = n_indices[:, 0] * n_pixels[1] + n_indices[:, 1]
-        n_indices = ep.unique(n_indices)
+        n_indices_idx =np.unique(n_indices.raw.numpy(), return_index=True)[1]
+        n_indices = n_indices[np.sort(n_indices_idx)]
         n_indices = ep.stack([n_indices // n_pixels[1],
                               n_indices % n_pixels[1]], axis=1)
         n_pixels_list.append(int(n_indices.shape[0]))

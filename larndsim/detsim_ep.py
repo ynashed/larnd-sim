@@ -3,6 +3,8 @@ Module that calculates the current induced by edep-sim track segments
 on the pixels
 """
 import eagerpy as ep
+import torch
+import numpy as np
 from math import pi, ceil, sqrt, erf, exp, log, floor
 
 from .consts import pixel_pitch, tpc_borders, time_interval, n_pixels
@@ -16,6 +18,8 @@ logger = logging.getLogger('detsim')
 logger.setLevel(logging.WARNING)
 logger.info("DETSIM MODULE PARAMETERS")
 
+def ceil_hack(input):
+    return ep.astensor(torch.ceil(input.raw))
 
 def time_intervals(event_id_map, tracks, fields):
     """
@@ -44,7 +48,7 @@ def time_intervals(event_id_map, tracks, fields):
                          ((tracks_t_start - consts.time_padding) / consts.t_sampling) * consts.t_sampling)
     t_length = t_end - t_start
     track_starts = (t_start + event_id_map_ep * time_interval[1] * 3).raw
-    time_max = (ep.max(t_length / consts.t_sampling)).raw
+    time_max = (ep.max(ceil_hack(t_length / consts.t_sampling))).raw
     return track_starts, time_max
 
 
@@ -118,101 +122,107 @@ def z_interval(start_point, end_point, x_p, y_p, tolerance, eps=1e-12):
     z_min_delta = ep.where(cond, ep.minimum(minusDeltaZ, plusDeltaZ), 0)
     z_max_delta = ep.where(cond, ep.maximum(minusDeltaZ, plusDeltaZ), 0)
     return z_poca, z_min_delta, z_max_delta
-#
-#
-# def _b(x, y, z, start, sigmas, segment, Deltar):
-#     return -((x - start[0]) / (sigmas[0] * sigmas[0]) * (segment[0] / Deltar) + \
-#              (y - start[1]) / (sigmas[1] * sigmas[1]) * (segment[1] / Deltar) + \
-#              (z - start[2]) / (sigmas[2] * sigmas[2]) * (segment[2] / Deltar))
-#
-#
-# def rho(point, q, start, sigmas, segment):
-#     """
-#     Function that returns the amount of charge at a certain point in space
-#
-#     Args:
-#         point (tuple): point coordinates
-#         q (float): total charge
-#         start (tuple): segment start coordinates
-#         sigmas (tuple): diffusion coefficients
-#         segment (tuple): segment sizes
-#
-#     Returns:
-#         float: the amount of charge at `point`.
-#     """
-#     x, y, z = point
-#     Deltax, Deltay, Deltaz = segment[0], segment[1], segment[2]
-#     Deltar = sqrt(Deltax ** 2 + Deltay ** 2 + Deltaz ** 2)
-#     a = ((Deltax / Deltar) * (Deltax / Deltar) / (2 * sigmas[0] * sigmas[0]) + \
-#          (Deltay / Deltar) * (Deltay / Deltar) / (2 * sigmas[1] * sigmas[1]) + \
-#          (Deltaz / Deltar) * (Deltaz / Deltar) / (2 * sigmas[2] * sigmas[2]))
-#     factor = q / Deltar / (sigmas[0] * sigmas[1] * sigmas[2] * sqrt(8 * pi * pi * pi))
-#     sqrt_a_2 = 2 * sqrt(a)
-#
-#     b = _b(x, y, z, start, sigmas, segment, Deltar)
-#
-#     delta = (x - start[0]) * (x - start[0]) / (2 * sigmas[0] * sigmas[0]) + \
-#             (y - start[1]) * (y - start[1]) / (2 * sigmas[1] * sigmas[1]) + \
-#             (z - start[2]) * (z - start[2]) / (2 * sigmas[2] * sigmas[2])
-#
-#     integral = sqrt(pi) * \
-#                (-erf(b / sqrt_a_2) + erf((b + 2 * a * Deltar) / sqrt_a_2)) / \
-#                sqrt_a_2
-#
-#     expo = 0
-#
-#     if factor and integral:
-#         expo = exp(b * b / (4 * a) - delta + log(factor) + log(integral))
-#
-#     return expo
-#
-#
-# def truncexpon(x, loc=0, scale=1):
-#     """
-#     A truncated exponential distribution.
-#     To shift and/or scale the distribution use the `loc` and `scale` parameters.
-#     """
-#     y = (x - loc) / scale
-#
-#     return exp(-y) / scale if y > 0 else 0
-#
-#
-# def current_model(t, t0, x, y):
-#     """
-#     Parametrization of the induced current on the pixel, which depends
-#     on the of arrival at the anode (:math:`t_0`) and on the position
-#     on the pixel pad.
-#
-#     Args:
-#         t (float): time where we evaluate the current
-#         t0 (float): time of arrival at the anode
-#         x (float): distance between the point on the pixel and the pixel center
-#             on the :math:`x` axis
-#         y (float): distance between the point on the pixel and the pixel center
-#             on the :math:`y` axis
-#
-#     Returns:
-#         float: the induced current at time :math:`t`
-#     """
-#     B_params = (1.060, -0.909, -0.909, 5.856, 0.207, 0.207)
-#     C_params = (0.679, -1.083, -1.083, 8.772, -5.521, -5.521)
-#     D_params = (2.644, -9.174, -9.174, 13.483, 45.887, 45.887)
-#     t0_params = (2.948, -2.705, -2.705, 4.825, 20.814, 20.814)
-#
-#     a = B_params[0] + B_params[1] * x + B_params[2] * y + B_params[3] * x * y + B_params[4] * x * x + B_params[
-#         5] * y * y
-#     b = C_params[0] + C_params[1] * x + C_params[2] * y + C_params[3] * x * y + C_params[4] * x * x + C_params[
-#         5] * y * y
-#     c = D_params[0] + D_params[1] * x + D_params[2] * y + D_params[3] * x * y + D_params[4] * x * x + D_params[
-#         5] * y * y
-#     shifted_t0 = t0 + t0_params[0] + t0_params[1] * x + t0_params[2] * y + \
-#                  t0_params[3] * x * y + t0_params[4] * x * x + t0_params[5] * y * y
-#
-#     a = min(a, 1)
-#
-#     return a * truncexpon(-t, -shifted_t0, b) + (1 - a) * truncexpon(-t, -shifted_t0, c)
-#
-#
+
+def _b(x, y, z, start, sigmas, segment, Deltar):
+    return -((x - start[:, ep.newaxis, 0, ep.newaxis, ep.newaxis, ep.newaxis]) / (sigmas[:, ep.newaxis, 0, ep.newaxis, ep.newaxis, ep.newaxis] * sigmas[:, ep.newaxis, 0, ep.newaxis, ep.newaxis, ep.newaxis]) * (segment[:, ep.newaxis, 0, ep.newaxis, ep.newaxis, ep.newaxis] / Deltar[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + \
+             (y - start[:, ep.newaxis, ep.newaxis, 1,  ep.newaxis, ep.newaxis]) / (sigmas[:, ep.newaxis, ep.newaxis, 1,  ep.newaxis, ep.newaxis] * sigmas[:, ep.newaxis, ep.newaxis, 1,  ep.newaxis, ep.newaxis]) * (segment[:, ep.newaxis, ep.newaxis, 1,  ep.newaxis, ep.newaxis] / Deltar[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + \
+             (z - start[:, ep.newaxis, ep.newaxis, ep.newaxis, 2, ep.newaxis]) / (sigmas[:, ep.newaxis, ep.newaxis, ep.newaxis, 2, ep.newaxis] * sigmas[:, ep.newaxis, ep.newaxis, ep.newaxis, 2, ep.newaxis]) * (segment[:, ep.newaxis, ep.newaxis, ep.newaxis, 2, ep.newaxis] / Deltar[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]))
+
+
+def erf_hack(input):
+    return ep.astensor(torch.erf(input.raw))
+def nan_to_num_hack(input):
+    return ep.astensor(torch.nan_to_num(input.raw))
+
+def rho(point, q, start, sigmas, segment):
+    """
+    Function that returns the amount of charge at a certain point in space
+
+    Args:
+        point (tuple): point coordinates
+        q (float): total charge
+        start (tuple): segment start coordinates
+        sigmas (tuple): diffusion coefficients
+        segment (tuple): segment sizes
+
+    Returns:
+        float: the amount of charge at `point`.
+    """
+    x, y, z = point
+    Deltax, Deltay, Deltaz = segment[..., 0], segment[..., 1], segment[..., 2]
+    Deltar = ep.sqrt(Deltax**2+Deltay**2+Deltaz**2)
+    a = ((Deltax/Deltar) * (Deltax/Deltar) / (2*sigmas[:, 0]*sigmas[:, 0]) + \
+         (Deltay/Deltar) * (Deltay/Deltar) / (2*sigmas[:, 1]*sigmas[:, 1]) + \
+         (Deltaz/Deltar) * (Deltaz/Deltar) / (2*sigmas[:, 2]*sigmas[:, 2]))
+    factor = q/Deltar/(sigmas[:, 0]*sigmas[:, 1]*sigmas[:, 2]*sqrt(8*pi*pi*pi))
+    sqrt_a_2 = 2*ep.sqrt(a)
+
+    b = _b(x, y, z, start, sigmas, segment, Deltar)
+
+    delta = (x-start[:, ep.newaxis, 0, ep.newaxis, ep.newaxis, ep.newaxis])*(x-start[:, ep.newaxis, 0, ep.newaxis, ep.newaxis, ep.newaxis])/(2*sigmas[:, ep.newaxis, 0, ep.newaxis, ep.newaxis, ep.newaxis]*sigmas[:, ep.newaxis, 0, ep.newaxis, ep.newaxis, ep.newaxis]) + \
+            (y-start[:, ep.newaxis, ep.newaxis, 1,  ep.newaxis, ep.newaxis])*(y-start[:, ep.newaxis, ep.newaxis, 1,  ep.newaxis, ep.newaxis])/(2*sigmas[:, ep.newaxis, ep.newaxis, 1,  ep.newaxis, ep.newaxis]*sigmas[:, ep.newaxis, ep.newaxis, 1,  ep.newaxis, ep.newaxis]) + \
+            (z-start[:, ep.newaxis, ep.newaxis, ep.newaxis, 2, ep.newaxis])*(z-start[:, ep.newaxis, ep.newaxis, ep.newaxis, 2, ep.newaxis])/(2*sigmas[:, ep.newaxis, ep.newaxis, ep.newaxis, 2, ep.newaxis]*sigmas[:, ep.newaxis, ep.newaxis, ep.newaxis, 2, ep.newaxis])
+
+
+    integral = sqrt(pi) * \
+               (-erf_hack(b/sqrt_a_2[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + 
+                erf_hack((b + 2*(a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]*Deltar[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]))/sqrt_a_2[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis])) / \
+               sqrt_a_2[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]
+
+   # if factor and integral:
+    expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta + ep.log(factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + ep.log(integral))
+    expo = nan_to_num_hack(expo)
+
+    return expo
+
+
+
+def truncexpon(x, loc=0, scale=1):
+    """
+    A truncated exponential distribution.
+    To shift and/or scale the distribution use the `loc` and `scale` parameters.
+    """
+    y = (x - loc) / scale
+    
+    return ep.where(y>0, ep.exp(-y) / scale, 0)
+
+
+def current_model(t, t0, x, y):
+    """
+    Parametrization of the induced current on the pixel, which depends
+    on the of arrival at the anode (:math:`t_0`) and on the position
+    on the pixel pad.
+
+    Args:
+        t (float): time where we evaluate the current
+        t0 (float): time of arrival at the anode
+        x (float): distance between the point on the pixel and the pixel center
+            on the :math:`x` axis
+        y (float): distance between the point on the pixel and the pixel center
+            on the :math:`y` axis
+
+    Returns:
+        float: the induced current at time :math:`t`
+    """
+    B_params = (1.060, -0.909, -0.909, 5.856, 0.207, 0.207)
+    C_params = (0.679, -1.083, -1.083, 8.772, -5.521, -5.521)
+    D_params = (2.644, -9.174, -9.174, 13.483, 45.887, 45.887)
+    t0_params = (2.948, -2.705, -2.705, 4.825, 20.814, 20.814)
+
+    a = B_params[0] + B_params[1] * x + B_params[2] * y + B_params[3] * x * y + B_params[4] * x * x + B_params[
+        5] * y * y
+    b = C_params[0] + C_params[1] * x + C_params[2] * y + C_params[3] * x * y + C_params[4] * x * x + C_params[
+        5] * y * y
+    c = D_params[0] + D_params[1] * x + D_params[2] * y + D_params[3] * x * y + D_params[4] * x * x + D_params[
+        5] * y * y
+    shifted_t0 = t0 + t0_params[0] + t0_params[1] * x + t0_params[2] * y + \
+                 t0_params[3] * x * y + t0_params[4] * x * x + t0_params[5] * y * y
+
+    a = ep.min(a, 1, keepdims=True)
+
+    return a * truncexpon(-t, -shifted_t0, b) + (1 - a) * truncexpon(-t, -shifted_t0, c)
+
+
 def track_point(start, direction, z):
     """
     This function returns the segment coordinates for a point along the `z` coordinate
@@ -290,7 +300,7 @@ def tracks_current(pixels, tracks, fields):
     impact_factor = ep.maximum(ep.sqrt((5 * sigmas[:, 0]) ** 2 + (5 * sigmas[:, 1]) ** 2),
                                ep.full_like(sigmas[:, 0], sqrt(pixel_pitch ** 2 + pixel_pitch ** 2) / 2)) * 2
     z_poca, z_start, z_end = z_interval(start, end, x_p, y_p, impact_factor)
-
+    
     z_start_int = z_start - 4 * sigmas[:, 2][...,ep.newaxis]
     z_end_int = z_end + 4 * sigmas[:, 2][...,ep.newaxis]
 
@@ -310,7 +320,7 @@ def tracks_current(pixels, tracks, fields):
     total_current = 0
     total_charge = 0
 
-    # time_tick = t_start + it * consts.t_sampling
+    time_tick = t_start #+ it * consts.t_sampling
     iz = ep.arange(z_steps, 0, z_steps.max().item())
     z =  z_start_int[...,ep.newaxis] + iz[ep.newaxis, ep.newaxis, :] * z_step[...,ep.newaxis]
     tpc_borders_ep = ep.from_numpy(pixels, tpc_borders).float32()
@@ -322,36 +332,38 @@ def tracks_current(pixels, tracks, fields):
     x = x_start[...,ep.newaxis] + \
         ep.sign(direction[..., 0, ep.newaxis, ep.newaxis]) *\
         (ix[ep.newaxis, ep.newaxis, :] * x_step[...,ep.newaxis]  - 4 * sigmas[..., 0, ep.newaxis, ep.newaxis])
-    print(x.shape, x_p.shape)
 
     x_dist = ep.abs(x_p - x)
-    print(x_dist.shape, pixel_pitch)
-    print(x_dist)
 
+    x_dist = ep.where(x_dist > pixel_pitch / 2, 0, x_dist)
     # if x_dist > pixel_pitch / 2:
     #     continue
 
-    for iy in range(consts.sampled_points):
+    iy = ep.arange(iz, 0, consts.sampled_points)
 
-        y = y_start + sign(direction[1]) * (iy * y_step - 4 * sigmas[1])
-        y_dist = abs(y_p - y)
+    y = y_start[...,ep.newaxis] + \
+        ep.sign(direction[..., 1, ep.newaxis, ep.newaxis]) *\
+        (iy[ep.newaxis, ep.newaxis, :] * y_step[...,ep.newaxis] - 4 * sigmas[..., 1, ep.newaxis, ep.newaxis])
+    y_dist = ep.abs(y_p - y)
 
-        if y_dist > pixel_pitch / 2:
-            continue
+    y_dist = ep.where(y_dist > pixel_pitch / 2, 0, y_dist)
+    charge =  rho((x[:,:, :, ep.newaxis, ep.newaxis], y[:,:, ep.newaxis, :, ep.newaxis], z[:,:, ep.newaxis, ep.newaxis, :]), tracks_ep[:, fields.index("n_electrons")], start, sigmas, segment)\
+     * ep.abs(x_step[..., ep.newaxis, ep.newaxis, ep.newaxis]) * ep.abs(y_step[..., ep.newaxis, ep.newaxis, ep.newaxis]) * ep.abs(z_step[..., ep.newaxis, ep.newaxis, ep.newaxis])
 
-        charge = rho((x, y, z), t["n_electrons"], start, sigmas, segment) \
-                 * abs(x_step) * abs(y_step) * abs(z_step)
+    return charge, current_model(time_tick[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis], 
+                                 t0[:, :, ep.newaxis, ep.newaxis, :], 
+                                 x_dist[:, :, :, ep.newaxis, ep.newaxis], 
+                                 y_dist[:, :, ep.newaxis, :, ep.newaxis])
+   # total_current += current_model(time_tick, t0, x_dist, y_dist) * charge * consts.e_charge
 
-        total_current += current_model(time_tick, t0, x_dist, y_dist) * charge * consts.e_charge
+   # signals[itrk, ipix, it] = total_current
 
-        signals[itrk, ipix, it] = total_current
-#
-#
-# def sign(x):
-#     """
-#     Sign function
-#     """
-#     return 1 if x >= 0 else -1
+
+#def sign(x):
+#    """
+#    Sign function
+#    """
+#    return 1 if x >= 0 else -1
 #
 #
 # def sum_pixel_signals(pixels_signals, signals, track_starts, index_map):
