@@ -179,7 +179,7 @@ def truncexpon(x, loc=0, scale=1):
     To shift and/or scale the distribution use the `loc` and `scale` parameters.
     """
     y = (x - loc) / scale
-    
+
     return ep.where(y>0, ep.exp(-y) / scale, 0)
 
 
@@ -344,32 +344,37 @@ def tracks_current(pixels, tracks, time_max, fields):
     charge =  rho((x[:,:, :, ep.newaxis, ep.newaxis], y[:,:, ep.newaxis, :, ep.newaxis], z[:,:, ep.newaxis, ep.newaxis, :]), tracks_ep[:, fields.index("n_electrons")], start, sigmas, segment)\
      * ep.abs(x_step[..., ep.newaxis, ep.newaxis, ep.newaxis]) * ep.abs(y_step[..., ep.newaxis, ep.newaxis, ep.newaxis]) * ep.abs(z_step[..., ep.newaxis, ep.newaxis, ep.newaxis])
 
+    # Setup mask of pixel pitch and z_poca conditions 
+    cond_pix = ep.logical_and(x_dist[:, :, :, ep.newaxis] < pixel_pitch/2,
+                              y_dist[:, :, ep.newaxis, :] < pixel_pitch/2)
+    cond_all = ep.logical_and(cond_pix, z_poca[:, :, ep.newaxis, ep.newaxis] != 0)
 
-    current = current_model(time_tick[:, ep.newaxis, :, ep.newaxis, ep.newaxis, ep.newaxis], 
-                            t0[:, :, ep.newaxis, ep.newaxis, ep.newaxis, :], 
-                            x_dist[:, :, ep.newaxis, :, ep.newaxis, ep.newaxis], 
-                            y_dist[:, :, ep.newaxis, ep.newaxis, :, ep.newaxis]) * charge[:, :, ep.newaxis, ...] * consts.e_charge
+    # Indices passing conditions (better way to do this than np and raw?)
+    trk_idx, pix_idx, xidx, yidx = np.where(cond_all.raw)
 
-    #Remove terms from sum failing pixel_pitch condition
-    current = ep.where(x_dist[:, :, ep.newaxis, :, ep.newaxis, ep.newaxis]>pixel_pitch/2, 0, current)
-    current = ep.where(y_dist[:, :, ep.newaxis, ep.newaxis, :, ep.newaxis]> pixel_pitch/2, 0, current)
+    # Set up inputs (with multiplicities) in "passing condition" space
+    tt_sel = time_tick[trk_idx, :, ep.newaxis]
+    t0_sel = t0[trk_idx, pix_idx, ep.newaxis, :]
+    xd_sel = x_dist[trk_idx, pix_idx, xidx, ep.newaxis, ep.newaxis] 
+    yd_sel = y_dist[trk_idx, pix_idx, yidx, ep.newaxis, ep.newaxis] 
 
-    #Sum over x, y, z sampling cube
-    total_current = current.sum(axis=(3,4,5))
+    # Current model
+    current_out = current_model(tt_sel, t0_sel, xd_sel, yd_sel)
 
-    #0 signal if z_poca == 0
-    signals = ep.where(z_poca[:,:, ep.newaxis] != 0, total_current, 0)
+    # Multiply in appropriate charge and const. Sum over z sampling right away
+    full_out = (charge[trk_idx, pix_idx, xidx, yidx][:, ep.newaxis, :]*current_out*consts.e_charge).sum(axis=2)
+
+    # Map back to pixels/tracks/time steps with zero padding. Better way to do this than raw?
+    reshaped = ep.zeros(full_out, shape=(x_dist.shape[0],x_dist.shape[1], time_max, 
+                                    consts.sampled_points, consts.sampled_points)).raw
+    reshaped[trk_idx, pix_idx, :, xidx, yidx] = full_out.raw
+
+    # Sum over x, y sampling cube
+    signals = reshaped.sum(axis=(3,4))
    
     return signals
 
 
-#def sign(x):
-#    """
-#    Sign function
-#    """
-#    return 1 if x >= 0 else -1
-#
-#
 # def sum_pixel_signals(pixels_signals, signals, track_starts, index_map):
 #     """
 #     This function sums the induced current signals on the same pixel.
