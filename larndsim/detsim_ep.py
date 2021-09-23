@@ -374,9 +374,6 @@ def tracks_current(pixels, tracks, time_max, fields):
 
     return signals.raw
 
-# Round exists everywhere - so should be able to add
-def round_hack(input):
-    return ep.astensor(torch.round(input.raw))
 
 def sum_pixel_signals(pixels_signals, signals, track_starts, index_map):
     """
@@ -403,7 +400,7 @@ def sum_pixel_signals(pixels_signals, signals, track_starts, index_map):
     index = index_map[..., ep.newaxis]
 
     # Set up time map to match with signal shape. To implement: ep.round
-    itime = (round_hack(track_starts / consts.t_sampling)[:, ep.newaxis, ep.newaxis] +
+    itime = ((track_starts / consts.t_sampling + 0.5).astype(int)[:, ep.newaxis, ep.newaxis] +
              ep.arange(signals, 0, signals.shape[2])[ep.newaxis, ep.newaxis, :])
 
     # Each signal index now has a corresponding pixel/time index
