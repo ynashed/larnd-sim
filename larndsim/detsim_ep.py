@@ -364,45 +364,75 @@ def tracks_current(pixels, tracks, time_max, fields):
     # Multiply in appropriate charge and const. Sum over z sampling right away
     full_out = (charge[trk_idx, pix_idx, xidx, yidx][:, ep.newaxis, :]*current_out*consts.e_charge).sum(axis=2)
 
-    # Map back to pixels/tracks/time steps with zero padding. Better way to do this than raw?
-    reshaped = ep.zeros(full_out, shape=(x_dist.shape[0],x_dist.shape[1], time_max, 
-                                    consts.sampled_points, consts.sampled_points)).raw
-    reshaped[trk_idx, pix_idx, :, xidx, yidx] = full_out.raw
+    # Map back to pixels/tracks/time steps with zero padding
+    reshaped = ep.zeros(full_out, shape=(x_dist.shape[0],x_dist.shape[1], time_max,
+                                    consts.sampled_points, consts.sampled_points))
+    reshaped = ep.index_update(reshaped, ep.index[trk_idx, pix_idx, :, xidx, yidx], full_out)
 
     # Sum over x, y sampling cube
     signals = reshaped.sum(axis=(3,4))
-   
-    return signals
+
+    return signals.raw
+
+# Round exists everywhere - so should be able to add
+def round_hack(input):
+    return ep.astensor(torch.round(input.raw))
+
+def sum_pixel_signals(pixels_signals, signals, track_starts, index_map):
+    """
+    This function sums the induced current signals on the same pixel.
+
+    Args:
+        pixels_signals (:obj:`numpy.ndarray`): 2D array that will contain the
+            summed signal for each pixel. First dimension is the pixel ID, second
+            dimension is the time tick
+        signals (:obj:`numpy.ndarray`): 3D array with dimensions S x P x T,
+            where S is the number of track segments, P is the number of pixels, and T is
+            the number of time ticks.
+        track_starts (:obj:`numpy.ndarray`): 1D array containing the starting time of
+            each track
+        index_map (:obj:`numpy.ndarray`): 2D array containing the correspondence between
+            the track index and the pixel ID index.
+    """
+
+    signals = ep.astensor(signals)
+    track_starts = ep.astensor(track_starts) 
+    index_map = ep.astensor(index_map)
+
+    # Set up index map to match with signal shape
+    index = index_map[..., ep.newaxis]
+
+    # Set up time map to match with signal shape. To implement: ep.round
+    itime = (round_hack(track_starts / consts.t_sampling)[:, ep.newaxis, ep.newaxis] +
+             ep.arange(signals, 0, signals.shape[2])[ep.newaxis, ep.newaxis, :])
+
+    # Each signal index now has a corresponding pixel/time index
+    exp_index = ep.tile(index, (1,1,signals.shape[2]))
+    exp_itime = ep.tile(itime, (1, signals.shape[1], 1))
+
+    # Put pixel/time/signal together and flatten
+    idxs = ep.stack((exp_index, exp_itime, signals), axis=-1)
+    flat_idxs = idxs.reshape((-1, 3))
+
+    # Get unique indices (return_inverse doesn't exist for ep)
+    unique_idxs, idx_inv = flat_idxs[:, :2].raw.unique(dim=0, return_inverse=True)
+
+    unique_idxs = ep.astensor(unique_idxs)
+    idx_inv = ep.astensor(idx_inv)
+
+    # Sum over values for unique indices - scatter_add_ doesn't exist in ep
+    res = ep.astensor(ep.zeros(signals, shape=(len(unique_idxs))).raw.scatter_add_(0, idx_inv.raw, flat_idxs[:, 2].raw))
+    #out = ep.zeros(signals, shape=(len(unique_idxs)))
+    #for i in range(flat_idxs.shape[0]):
+     #   out = out.index_update(idx_inv[i], out[idx_inv[i]]+flat_idxs[i, 2])
+
+    output = ep.index_update(ep.astensor(pixels_signals), (unique_idxs[:,0].astype(int), 
+                                                           unique_idxs[:,1].astype(int)), res)
+
+    return output.raw
 
 
-# def sum_pixel_signals(pixels_signals, signals, track_starts, index_map):
-#     """
-#     This function sums the induced current signals on the same pixel.
-#
-#     Args:
-#         pixels_signals (:obj:`numpy.ndarray`): 2D array that will contain the
-#             summed signal for each pixel. First dimension is the pixel ID, second
-#             dimension is the time tick
-#         signals (:obj:`numpy.ndarray`): 3D array with dimensions S x P x T,
-#             where S is the number of track segments, P is the number of pixels, and T is
-#             the number of time ticks.
-#         track_starts (:obj:`numpy.ndarray`): 1D array containing the starting time of
-#             each track
-#         index_map (:obj:`numpy.ndarray`): 2D array containing the correspondence between
-#             the track index and the pixel ID index.
-#     """
-#     it, ipix, itick = cuda.grid(3)
-#
-#     if it < signals.shape[0] and ipix < signals.shape[1]:
-#
-#         index = index_map[it][ipix]
-#         start_tick = round(track_starts[it] / consts.t_sampling)
-#
-#         if itick < signals.shape[2] and index >= 0:
-#             itime = start_tick + itick
-#             cuda.atomic.add(pixels_signals, (index, itime), signals[it][ipix][itick])
-#
-#
+
 # def backtrack_adcs(tracks, adc_list, adc_times_list, track_pixel_map, event_id_map, unique_evids, backtracked_id,
 #                    shift):
 #     pedestal = floor((fee.V_PEDESTAL - fee.V_CM) * fee.ADC_COUNTS / (fee.V_REF - fee.V_CM))
