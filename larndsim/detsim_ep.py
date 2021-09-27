@@ -49,8 +49,8 @@ class detsim(consts):
         t_length = t_end - t_start
         track_starts = (t_start + event_id_map_ep * self.time_interval[1] * 3).raw
         
-        time_max = (ep.max(t_length / self.t_sampling + 1)).raw.trunc()
-        return track_starts, time_max
+        time_max = (ep.max(t_length / self.t_sampling + 1)).astype(int)
+        return track_starts, time_max.raw
 
 
     def z_interval(self, start_point, end_point, x_p, y_p, tolerance, eps=1e-12):
@@ -315,9 +315,11 @@ class detsim(consts):
         z_steps = ep.maximum(self.sampled_points, ((ep.abs(z_end_int - z_start_int) / z_sampling)+1).astype(int))
 
         z_step = (z_end_int - z_start_int) / (z_steps - 1)
+
+        #This was a // divide, implement?
         t_start = ep.maximum(self.time_interval[0],
                              (tracks_ep[:, fields.index("t_start")] - self.time_padding)
-                             // self.t_sampling * self.t_sampling)
+                             / self.t_sampling * self.t_sampling)
         total_current = 0
         total_charge = 0
 
