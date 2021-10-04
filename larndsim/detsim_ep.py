@@ -108,7 +108,9 @@ class detsim(consts):
 
         length2D = ep.norms.l2(vec3D[...,:2], axis=1, keepdims=True)
         dir2D = vec3D[...,:2] / length2D
-        deltaL2D = ep.sqrt(tolerance[..., ep.newaxis] ** 2 - doca ** 2)  # length along the track in 2D
+
+        #Check this - abs avoids nans
+        deltaL2D = ep.sqrt(ep.abs(tolerance[..., ep.newaxis] ** 2 - doca ** 2))  # length along the track in 2D
 
         x_plusDeltaL = x_poca + deltaL2D * dir2D[:,0][..., ep.newaxis]  # x coordinates of the tolerance range
         x_minusDeltaL = x_poca - deltaL2D * dir2D[:,0][..., ep.newaxis]
@@ -168,9 +170,11 @@ class detsim(consts):
                     self.erf_hack((b + 2*(a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]*Deltar[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]))/sqrt_a_2[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis])) / \
                    sqrt_a_2[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]
 
-       # if factor and integral:
-        expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta + ep.log(factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + ep.log(integral))
-        expo = ep.where(expo.isnan(), 0, expo)
+
+       # expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta + ep.log(factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + ep.log(integral))
+        #expo = ep.where(expo.isnan(), 0, expo)
+        #Avoid logs by bringing down - should be equiv?
+        expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta)*factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]*integral
 
         return expo
 
@@ -183,7 +187,10 @@ class detsim(consts):
         """
         y = (x - loc) / scale
 
-        return ep.where(y>0, ep.exp(-y) / scale, 0)
+        #Make everything positive and then mask to avoid infs
+        full_exp = ep.exp(-ep.abs(y))
+
+        return ep.where(y>0, full_exp / scale, 0)
 
 
     def current_model(self, t, t0, x, y):
@@ -301,7 +308,7 @@ class detsim(consts):
         impact_factor = ep.maximum(ep.sqrt((5 * sigmas[:, 0]) ** 2 + (5 * sigmas[:, 1]) ** 2),
                                    ep.full_like(sigmas[:, 0], sqrt(self.pixel_pitch ** 2 + self.pixel_pitch ** 2) / 2)) * 2
         z_poca, z_start, z_end = self.z_interval(start, end, x_p, y_p, impact_factor)
-        
+
         z_start_int = z_start - 4 * sigmas[:, 2][...,ep.newaxis]
         z_end_int = z_end + 4 * sigmas[:, 2][...,ep.newaxis]
 
@@ -378,7 +385,7 @@ class detsim(consts):
         signals = reshaped.sum(axis=(3,4))
 
         return signals.raw
-
+        
 
     def sum_pixel_signals(self, pixels_signals, signals, track_starts, index_map):
         """
