@@ -63,8 +63,9 @@ class drift(consts):
         lifetime_red = ep.exp(-drift_time / self.lifetime)
 
         #TODO: investigate using ep.where instead of masking all values
+        #TODO: n_electrons should be int, but truncation makes gradients vanish
         tracks_ep = ep.index_update(tracks_ep, ep.index[:, fields.index("n_electrons")],
-                                     (tracks_ep[:, fields.index("n_electrons")] * lifetime_red * mask))
+                                    (tracks_ep[:, fields.index("n_electrons")] * lifetime_red * mask))
         tracks_ep = ep.index_update(tracks_ep, ep.index[:, fields.index("long_diff")],
                                     ep.sqrt((drift_time + 0.5 / self.vdrift) * 2 * self.long_diff * mask))
         tracks_ep = ep.index_update(tracks_ep, ep.index[:, fields.index("tran_diff")],

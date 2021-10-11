@@ -47,8 +47,7 @@ class quench(consts):
         if ep.isnan(recomb).any():
             raise RuntimeError("Invalid recombination value")
         
-        #Should be .astype(int), but this takes away gradient - do trunc for now
-        #tracks[:, fields.index("n_electrons")] = (recomb * dE * self.MeVToElectrons).raw.trunc()
+	#TODO: n_electrons should be int, but truncation makes gradients vanish
         tracks_ep = ep.index_update(tracks_ep, 
                                     ep.index[:, fields.index("n_electrons")], (recomb * dE * self.MeVToElectrons))
         return tracks_ep.raw

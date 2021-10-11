@@ -247,7 +247,6 @@ class detsim(consts):
 
         return xl, yl
 
-    #
     def get_pixel_coordinates(self, pixels):
         """
         Returns the coordinates of the pixel center given the pixel IDs
@@ -429,11 +428,11 @@ class detsim(consts):
         unique_idxs = ep.astensor(unique_idxs)
         idx_inv = ep.astensor(idx_inv)
 
-        # Sum over values for unique indices - scatter_add_ doesn't exist in ep
-        res = ep.astensor(ep.zeros(signals, shape=(len(unique_idxs))).raw.scatter_add_(0, idx_inv.raw, flat_idxs[:, 2].raw))
+        # Sum over values for unique indices - scatter_add_ doesn't exist in ep. Can loop, but slow, e.g.
         #out = ep.zeros(signals, shape=(len(unique_idxs)))
         #for i in range(flat_idxs.shape[0]):
          #   out = out.index_update(idx_inv[i], out[idx_inv[i]]+flat_idxs[i, 2])
+        res = ep.astensor(ep.zeros(signals, shape=(len(unique_idxs))).raw.scatter_add_(0, idx_inv.raw, flat_idxs[:, 2].raw))
 
         output = ep.index_update(ep.astensor(pixels_signals), (unique_idxs[:,0].astype(int), 
                                                                unique_idxs[:,1].astype(int)), res)

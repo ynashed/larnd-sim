@@ -120,7 +120,7 @@ class pixels_from_track(consts):
         neighboring_pixels = []
         n_pixels_list = []
         for ti, track in enumerate(active_pixels):
-            track = track[track > 0].reshape([-1, 2])
+            track = track[track >= 0].reshape([-1, 2])
             n_indices = ep.tile(neighbor_indices, [track.shape[0], 1]) + \
                         ep.tile(track, [1, neighbor_indices.shape[0]]).reshape([-1, 2])
             n_indices = n_indices[:, 0] * self.n_pixels[1] + n_indices[:, 1]
@@ -131,5 +131,13 @@ class pixels_from_track(consts):
             n_pixels_list.append(int(n_indices.shape[0]))
             neighboring_pixels.append(ep.pad(n_indices, ((0, max_pixels - n_indices.shape[0]), (0, 0)),
                                              mode='constant', value=-1))
+        
+
+        neighboring_pixels = ep.stack(neighboring_pixels)
+
+        plane_ids = neighboring_pixels[...,0] // self.n_pixels[0]
+        cond = (plane_ids < self.tpc_borders.shape[0])
+        neighboring_pixels = ep.where(cond[..., ep.newaxis], neighboring_pixels, -1)
+       
         # TODO: check if plane_id is important
-        return ep.stack(neighboring_pixels), n_pixels_list
+        return neighboring_pixels, n_pixels_list
