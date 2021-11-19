@@ -6,7 +6,6 @@ pixels.
 
 import eagerpy as ep
 import numpy as np
-import torch
 from math import ceil
 
 from .consts_ep import consts
