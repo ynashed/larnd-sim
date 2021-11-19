@@ -124,7 +124,7 @@ class pixels_from_track(consts):
             n_indices = ep.tile(neighbor_indices, [track.shape[0], 1]) + \
                         ep.tile(track, [1, neighbor_indices.shape[0]]).reshape([-1, 2])
             n_indices = n_indices[:, 0] * self.n_pixels[1] + n_indices[:, 1]
-            n_indices_idx =np.unique(n_indices.raw.numpy(), return_index=True)[1]
+            n_indices_idx =np.unique(n_indices.raw.cpu().numpy(), return_index=True)[1]
             n_indices = n_indices[np.sort(n_indices_idx)]
             n_indices = ep.stack([n_indices // self.n_pixels[1],
                                   n_indices % self.n_pixels[1]], axis=1)
