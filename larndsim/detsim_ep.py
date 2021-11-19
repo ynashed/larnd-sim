@@ -361,7 +361,7 @@ class detsim(consts):
         cond_all = ep.logical_and(cond_pix, z_poca[:, :, ep.newaxis, ep.newaxis] != 0)
 
         # Indices passing conditions (better way to do this than np and raw?)
-        trk_idx, pix_idx, xidx, yidx = np.where(cond_all.raw)
+        trk_idx, pix_idx, xidx, yidx = np.where(cond_all.raw.cpu())
 
         # Set up inputs (with multiplicities) in "passing condition" space
         tt_sel = time_tick[trk_idx, :, ep.newaxis]

@@ -170,7 +170,7 @@ class fee(consts):
         """
         integral_list = ep.astensor(integral_list)
         adcs = ep.minimum((ep.maximum((integral_list*self.GAIN/self.e_charge+self.V_PEDESTAL - self.V_CM), 0) \
-                          * self.ADC_COUNTS/(self.V_REF-self.V_CM)+0.5).astype(int), self.ADC_COUNTS)
+                          * self.ADC_COUNTS/(self.V_REF-self.V_CM)+0.5), self.ADC_COUNTS)
 
         return adcs.raw
 
@@ -225,6 +225,10 @@ class fee(consts):
             interval = round((3 * self.CLOCK_CYCLE + self.ADC_HOLD_DELAY * self.CLOCK_CYCLE) / self.t_sampling)
             integrate_end = ic+interval
             integrate_end = ep.where(ic == large_dummy, 0, integrate_end)
+            
+            #Protect against ic+integrate_end past last index
+            integrate_end = ep.where(integrate_end >= q_sum.shape[1], q_sum.shape[1]-1, integrate_end)
+ 
             ic = ep.where(ic == large_dummy, 0, ic)
 
             end2d_idx = tuple(ep.stack([ep.arange(ic, 0, ic.shape[0]), integrate_end]))
