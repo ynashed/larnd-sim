@@ -28,8 +28,8 @@ jobs:
         python-version: '3.8'
     - uses: ammaraskar/sphinx-action@master
       with:
-        pre-build-command: "apt-get update -y && apt-get install -y gcc && find larndsim/ -name '*.py' -exec sed -i '' -e 's/@cuda/#@cuda/g' {} +"
         docs-folder: "docs/"
+        pre-build-command: "sed -i 's/@cuda/#@cuda/g' larndsim/*.py; sed -i 's/import cupy/#import cupy/g' larndsim/fee.py; sed -i 's/from larpix/#from larpix/g' larndsim/fee.py"
     - uses: actions/upload-artifact@v1
       with:
         name: DocumentationHTML
