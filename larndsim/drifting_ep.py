@@ -18,7 +18,7 @@ logger.info("DRIFTING MODULE PARAMETERS")
 
 class drift(consts):
     def __init__(self):
-        super().__init__()
+        consts.__init__(self)
 
     def drift(self, tracks, fields):
         """

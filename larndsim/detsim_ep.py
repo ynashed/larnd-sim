@@ -18,8 +18,10 @@ logger.setLevel(logging.WARNING)
 logger.info("DETSIM MODULE PARAMETERS")
 
 class detsim(consts):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, track_chunk, pixel_chunk):
+        self.track_chunk = track_chunk
+        self.pixel_chunk = pixel_chunk
+        consts.__init__(self)
 
     def time_intervals(self, event_id_map, tracks, fields):
         """
@@ -155,34 +157,32 @@ class detsim(consts):
         factor = q/Deltar/(sigmas[:, 0]*sigmas[:, 1]*sigmas[:, 2]*sqrt(8*pi*pi*pi))
         sqrt_a_2 = 2*ep.sqrt(a)
 
-        x_component = (x - start[:, 0, ep.newaxis])
-        y_component = (y - start[:, 1, ep.newaxis])
-        z_component = (z - start[:, 2, ep.newaxis])
-        b = -( (x_component / sigma2[:, 0, ep.newaxis] * seg_step[:, 0, ep.newaxis])[:, :, ep.newaxis, ep.newaxis] +
-               (y_component / sigma2[:, 1, ep.newaxis] * seg_step[:, 1, ep.newaxis])[:, ep.newaxis, :, ep.newaxis] +
-               (z_component / sigma2[:, 2, ep.newaxis] * seg_step[:, 2, ep.newaxis])[:, ep.newaxis, ep.newaxis, :] )
+        x_component = (x - start[:, 0, ep.newaxis, ep.newaxis])
+        y_component = (y - start[:, 1, ep.newaxis, ep.newaxis])
+        z_component = (z - start[:, 2, ep.newaxis, ep.newaxis])
 
-        delta = (x_component**2/(double_sigma2[:, 0, ep.newaxis]))[:, :, ep.newaxis, ep.newaxis] + \
-                (y_component**2/(double_sigma2[:, 1, ep.newaxis]))[:, ep.newaxis, :, ep.newaxis] + \
-                (z_component**2/(double_sigma2[:, 2, ep.newaxis]))[:, ep.newaxis, ep.newaxis, :]
-        padded_sqrt_a_2 = sqrt_a_2[:, ep.newaxis, ep.newaxis, ep.newaxis]
+        b = -( (x_component / (sigma2[:, 0] * seg_step[:, 0])[..., ep.newaxis, ep.newaxis])[..., ep.newaxis, ep.newaxis] +
+               (y_component / (sigma2[:, 1] * seg_step[:, 1])[..., ep.newaxis, ep.newaxis])[:, :, ep.newaxis, :, ep.newaxis] +
+               (z_component / (sigma2[:, 2] * seg_step[:, 2])[..., ep.newaxis, ep.newaxis])[:, :, ep.newaxis, ep.newaxis, :] )
+
+        delta = (x_component**2/(double_sigma2[:, 0, ep.newaxis, ep.newaxis]))[..., ep.newaxis, ep.newaxis] + \
+                (y_component**2/(double_sigma2[:, 1, ep.newaxis, ep.newaxis]))[:, :, ep.newaxis, :, ep.newaxis] + \
+                (z_component**2/(double_sigma2[:, 2, ep.newaxis, ep.newaxis]))[:, :, ep.newaxis, ep.newaxis, :]
+        padded_sqrt_a_2 = sqrt_a_2[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]
         integral = sqrt(pi) * \
                    (-self.erf_hack(b/padded_sqrt_a_2) +
-                    self.erf_hack((b + 2*(a*Deltar)[:, ep.newaxis, ep.newaxis, ep.newaxis])/
+                    self.erf_hack((b + 2*(a*Deltar)[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis])/
                                   padded_sqrt_a_2)) / padded_sqrt_a_2
-
 
        # expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta + ep.log(factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + ep.log(integral))
         #expo = ep.where(expo.isnan(), 0, expo)
         #Avoid logs by bringing down - should be equiv?
-        expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis]) - delta) * \
-               factor[:, ep.newaxis, ep.newaxis, ep.newaxis]*integral
+        expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta) * \
+               factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]*integral
 
         #TODO: Figure out a way to do the sum over the sampling cube here.
         # Ask about the x_dist, y_dist > pixel_pitch/2 conditions in the original simulation
         return expo
-
-
 
     def truncexpon(self, x, loc=0, scale=1):
         """
@@ -330,51 +330,61 @@ class detsim(consts):
 
         signals = ep.zeros(pixels, shape=(pixels.shape[0], pixels.shape[1], time_max))
 
-        for ip in range(z_start.shape[1]):
-            z_sampling = self.t_sampling / 2.
-            z_steps = ep.maximum(self.sampled_points, ((ep.abs(z_end_int[:, ip]
-                                                        - z_start_int[:, ip]) / z_sampling)+1).astype(int))
+        for it in range(0, z_start.shape[0], self.track_chunk):
+            it_end = min(it + self.track_chunk, z_start.shape[0])
+            for ip in range(0, z_start.shape[1], self.pixel_chunk):
+                ip_end = min(ip + self.pixel_chunk, z_start.shape[1])
+                z_sampling = self.t_sampling / 2.
+                z_steps = ep.maximum(self.sampled_points, ((ep.abs(z_end_int[it:it_end, ip:ip_end]
+                                                            - z_start_int[it:it_end, ip:ip_end]) / z_sampling)+1).astype(int))
 
-            z_step = (z_end_int[:, ip] - z_start_int[:, ip]) / (z_steps - 1)
+                z_step = (z_end_int[it:it_end, ip:ip_end] - z_start_int[it:it_end, ip:ip_end]) / (z_steps - 1)
 
-            iz = ep.arange(z_steps, 0, z_steps.max().item())
-            z =  z_start_int[:, ip, ep.newaxis] + iz[ep.newaxis, :] * z_step[:, ep.newaxis]
+                iz = ep.arange(z_steps, 0, z_steps.max().item())
+                z =  z_start_int[it:it_end, ip:ip_end, ep.newaxis] + iz[ep.newaxis, ep.newaxis, :] * z_step[..., ep.newaxis]
 
-            t0 = (ep.abs(z - borders[..., 2, 0, ep.newaxis]) - 0.5) / self.vdrift
+                t0 = (ep.abs(z - borders[it:it_end, 2, 0, ep.newaxis, ep.newaxis]) - 0.5) / self.vdrift
 
-            # FIXME: this sampling is far from ideal, we should sample around the track
-            # and not in a cube containing the track
-            ix = ep.arange(iz, 0, self.sampled_points)
-            x = x_start[:, ip, ep.newaxis] + \
-                ep.sign(direction[..., 0, ep.newaxis]) *\
-                (ix[ep.newaxis, :] * x_step[:, ip, ep.newaxis]  - 4 * sigmas[..., 0, ep.newaxis])
-            x_dist = ep.abs(x_p[:, ip] - x)
+                # FIXME: this sampling is far from ideal, we should sample around the track
+                # and not in a cube containing the track
+                ix = ep.arange(iz, 0, self.sampled_points)
+                x = x_start[it:it_end, ip:ip_end, ep.newaxis] + \
+                    ep.sign(direction[it:it_end, 0, ep.newaxis, ep.newaxis]) *\
+                    (ix[ep.newaxis, ep.newaxis, :] *
+                     x_step[it:it_end, ip:ip_end, ep.newaxis]  - 4 * sigmas[it:it_end, 0, ep.newaxis, ep.newaxis])
+                x_dist = ep.abs(x_p[it:it_end, ip:ip_end] - x)
 
-            iy = ep.arange(iz, 0, self.sampled_points)
-            y = y_start[:, ip, ep.newaxis] + \
-                ep.sign(direction[..., 1, ep.newaxis]) * \
-                (iy[ep.newaxis, :] * y_step[:, ip, ep.newaxis] - 4 * sigmas[..., 1, ep.newaxis])
-            y_dist = ep.abs(y_p[:, ip] - y)
+                iy = ep.arange(iz, 0, self.sampled_points)
+                y = y_start[it:it_end, ip:ip_end, ep.newaxis] + \
+                    ep.sign(direction[it:it_end, 1, ep.newaxis, ep.newaxis]) * \
+                    (iy[ep.newaxis, ep.newaxis, :] *
+                     y_step[it:it_end, ip:ip_end, ep.newaxis] - 4 * sigmas[it:it_end, 1, ep.newaxis, ep.newaxis])
+                y_dist = ep.abs(y_p[it:it_end, ip:ip_end] - y)
 
-            charge = self.rho((x, y, z), tracks_ep[:, fields.index("n_electrons")], start, sigmas, segment) *\
-                     ep.abs(x_step[:, ip, ep.newaxis, ep.newaxis, ep.newaxis]) *\
-                     ep.abs(y_step[:, ip, ep.newaxis, ep.newaxis, ep.newaxis]) *\
-                     ep.abs(z_step[:, ep.newaxis, ep.newaxis, ep.newaxis])
+                charge = self.rho((x, y, z),
+                                  tracks_ep[it:it_end, fields.index("n_electrons")],
+                                  start[it:it_end], sigmas[it:it_end], segment[it:it_end]) *\
+                         ep.abs(x_step[it:it_end, ip:ip_end, ep.newaxis, ep.newaxis, ep.newaxis]) *\
+                         ep.abs(y_step[it:it_end, ip:ip_end, ep.newaxis, ep.newaxis, ep.newaxis]) *\
+                         ep.abs(z_step[:, :, ep.newaxis, ep.newaxis, ep.newaxis])
 
-            # Setup mask of pixel pitch and z_poca conditions
-            mask = ep.logical_or(x_dist > self.pixel_pitch/2, y_dist > self.pixel_pitch/2)
-            mask = ep.logical_or(mask, z_poca[:, ip, ep.newaxis] == 0)
-            charge *= mask[:, ep.newaxis, ep.newaxis, :]
-            
-            current_out = self.current_model(time_tick[..., ep.newaxis, ep.newaxis, ep.newaxis],
-                                             t0[:, ep.newaxis, ep.newaxis, ep.newaxis, :],
-                                             x_dist[:, ep.newaxis, :, ep.newaxis, ep.newaxis],
-                                             y_dist[:, ep.newaxis, ep.newaxis, :, ep.newaxis])
+                # mask z_poca rows
+                charge *= (z_poca != 0)[it:it_end, ip:ip_end, ep.newaxis, ep.newaxis, ep.newaxis]
 
-            # Multiply in appropriate charge and const. Sum over z sampling right away
-            total_current = charge[:, ep.newaxis, ...] * current_out * self.e_charge
+                # mask x rows
+                charge *= (x_dist < self.pixel_pitch / 2)[..., ep.newaxis, ep.newaxis]
 
-            signals = ep.index_update(signals, ep.index[:, ip, :], total_current.sum(axis=(2, 3, 4)))
+                # mask y elements
+                charge *= (y_dist < self.pixel_pitch / 2)[:, :, ep.newaxis, :, ep.newaxis]
+
+                current_out = self.current_model(time_tick[it:it_end, ep.newaxis, :, ep.newaxis, ep.newaxis, ep.newaxis],
+                                                 t0[:, :, ep.newaxis, ep.newaxis, ep.newaxis, :],
+                                                 x_dist[:, :, ep.newaxis, :, ep.newaxis, ep.newaxis],
+                                                 y_dist[:, :, ep.newaxis, ep.newaxis, :, ep.newaxis])
+
+                total_current = charge[:, :, ep.newaxis, ...] * current_out * self.e_charge
+
+                signals = ep.index_update(signals, ep.index[it:it_end, ip:ip_end, :], total_current.sum(axis=(3, 4, 5)))
 
         return signals.raw
 
