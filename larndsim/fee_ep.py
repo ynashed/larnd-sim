@@ -12,7 +12,7 @@ from .consts_ep import consts
 
 class fee(consts):
     def __init__(self):
-        super().__init__()
+        consts.__init__(self)
 
         #: Maximum number of ADC values stored per pixel
         self.MAX_ADC_VALUES = 10

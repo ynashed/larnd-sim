@@ -19,7 +19,7 @@ logger.info("PIXEL_FROM_TRACK MODULE PARAMETERS")
 
 class pixels_from_track(consts):
     def __init__(self):
-        super().__init__()
+        consts.__init__(self)
 
     def get_pixels(self, tracks, fields):
         """

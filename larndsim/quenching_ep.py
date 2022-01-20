@@ -16,7 +16,7 @@ logger.info("QUENCHING MODULE PARAMETERS")
 
 class quench(consts):
     def __init__(self):
-        super().__init__()
+        consts.__init__(self)
 
     def quench(self, tracks, mode, fields):
         """
