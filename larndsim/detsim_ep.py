@@ -161,9 +161,9 @@ class detsim(consts):
         y_component = (y - start[:, 1, ep.newaxis, ep.newaxis])
         z_component = (z - start[:, 2, ep.newaxis, ep.newaxis])
 
-        b = -( (x_component / (sigma2[:, 0] * seg_step[:, 0])[..., ep.newaxis, ep.newaxis])[..., ep.newaxis, ep.newaxis] +
-               (y_component / (sigma2[:, 1] * seg_step[:, 1])[..., ep.newaxis, ep.newaxis])[:, :, ep.newaxis, :, ep.newaxis] +
-               (z_component / (sigma2[:, 2] * seg_step[:, 2])[..., ep.newaxis, ep.newaxis])[:, :, ep.newaxis, ep.newaxis, :] )
+        b = -( (x_component / (sigma2[:, 0] / seg_step[:, 0])[..., ep.newaxis, ep.newaxis])[..., ep.newaxis, ep.newaxis] +
+               (y_component / (sigma2[:, 1] / seg_step[:, 1])[..., ep.newaxis, ep.newaxis])[:, :, ep.newaxis, :, ep.newaxis] +
+               (z_component / (sigma2[:, 2] / seg_step[:, 2])[..., ep.newaxis, ep.newaxis])[:, :, ep.newaxis, ep.newaxis, :] )
 
         delta = (x_component**2/(double_sigma2[:, 0, ep.newaxis, ep.newaxis]))[..., ep.newaxis, ep.newaxis] + \
                 (y_component**2/(double_sigma2[:, 1, ep.newaxis, ep.newaxis]))[:, :, ep.newaxis, :, ep.newaxis] + \
@@ -328,7 +328,7 @@ class detsim(consts):
         tpc_borders_ep = ep.from_numpy(pixels, self.tpc_borders).float32()
         borders = ep.stack([tpc_borders_ep[x.astype(int)] for x in tracks_ep[:, fields.index("pixel_plane")]])
 
-        signals = ep.zeros(pixels, shape=(pixels.shape[0], pixels.shape[1], time_max))
+        signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max))
 
         for it in range(0, z_start.shape[0], self.track_chunk):
             it_end = min(it + self.track_chunk, z_start.shape[0])
