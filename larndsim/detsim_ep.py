@@ -411,13 +411,22 @@ class detsim(consts):
             it_end = min(it + self.track_chunk, z_start.shape[0])
             for ip in range(0, z_start.shape[1], self.pixel_chunk):
                 ip_end = min(ip + self.pixel_chunk, z_start.shape[1])
-                # Torch checkpointing needs torch tensors for both input and output
-                current_sum  = checkpoint.checkpoint(self.calc_total_current, 
+                if tracks_ep.raw.grad_fn is not None:
+                    # Torch checkpointing needs torch tensors for both input and output
+                    current_sum  = checkpoint.checkpoint(self.calc_total_current, 
                                                      *(x_start[it:it_end, ip:ip_end].raw, y_start[it:it_end, ip:ip_end].raw, z_start.raw, 
                                                        z_end.raw, z_start_int[it:it_end, ip:ip_end].raw, z_end_int[it:it_end, ip:ip_end].raw, z_poca[it:it_end, ip:ip_end].raw, 
                                                        x_p[it:it_end, ip:ip_end].raw, y_p[it:it_end, ip:ip_end].raw, x_step[it:it_end, ip:ip_end].raw, y_step[it:it_end, ip:ip_end].raw, borders[it:it_end].raw, direction[it:it_end].raw, 
                                                        sigmas[it:it_end].raw,
                                                        tracks_ep[it:it_end, fields.index("n_electrons")].raw, start[it:it_end].raw, segment[it:it_end].raw, time_tick[it:it_end].raw))
+                else:
+                    current_sum  = self.calc_total_current( 
+                                                       x_start[it:it_end, ip:ip_end].raw, y_start[it:it_end, ip:ip_end].raw, z_start.raw,
+                                                       z_end.raw, z_start_int[it:it_end, ip:ip_end].raw, z_end_int[it:it_end, ip:ip_end].raw, z_poca[it:it_end, ip:ip_end].raw,
+                                                       x_p[it:it_end, ip:ip_end].raw, y_p[it:it_end, ip:ip_end].raw, x_step[it:it_end, ip:ip_end].raw, y_step[it:it_end, ip:ip_end].raw, borders[it:it_end].raw, direction[it:it_end].raw,
+                                                       sigmas[it:it_end].raw,
+                                                       tracks_ep[it:it_end, fields.index("n_electrons")].raw, start[it:it_end].raw, segment[it:it_end].raw, time_tick[it:it_end].raw)
+ 
 
                 signals = ep.index_update(signals, ep.index[it:it_end, ip:ip_end, :], ep.astensor(current_sum))
 
