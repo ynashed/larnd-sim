@@ -266,6 +266,25 @@ class detsim(consts):
                            z_end, z_start_int, z_end_int, z_poca, 
                            x_p, y_p, x_step, y_step, borders, direction, sigmas, tracks_ep, start, segment, time_tick):
 
+        x_start = ep.astensor(x_start)
+        y_start = ep.astensor(y_start)
+        z_start = ep.astensor(z_start)
+        z_end = ep.astensor(z_end)
+        z_start_int = ep.astensor(z_start_int)
+        z_end_int = ep.astensor(z_end_int)
+        z_poca = ep.astensor(z_poca)
+        x_p = ep.astensor(x_p)
+        y_p = ep.astensor(y_p)
+        x_step = ep.astensor(x_step)
+        y_step = ep.astensor(y_step)
+        borders = ep.astensor(borders)
+        direction = ep.astensor(direction)
+        sigmas = ep.astensor(sigmas)
+        tracks_ep = ep.astensor(tracks_ep)
+        start = ep.astensor(start)
+        segment = ep.astensor(segment)
+        time_tick = ep.astensor(time_tick)
+
         z_sampling = self.t_sampling / 2.
         z_steps = ep.maximum(self.sampled_points, ((ep.abs(z_end_int
                                                     - z_start_int) / z_sampling)+1).astype(int))
@@ -318,7 +337,7 @@ class detsim(consts):
 
         total_current = charge[:, :, ep.newaxis, ...] * current_out * self.e_charge
 
-        return total_current.sum(axis=(3, 4, 5))
+        return total_current.sum(axis=(3, 4, 5)).raw
 
     def tracks_current(self, pixels, tracks, time_max, fields):
         """
@@ -392,15 +411,15 @@ class detsim(consts):
             it_end = min(it + self.track_chunk, z_start.shape[0])
             for ip in range(0, z_start.shape[1], self.pixel_chunk):
                 ip_end = min(ip + self.pixel_chunk, z_start.shape[1])
-                print(f'it: {it}, ip: {ip}, mem (MB): {torch.cuda.memory_allocated()/(1024**2)}')
+                # Torch checkpointing needs torch tensors for both input and output
                 current_sum  = checkpoint.checkpoint(self.calc_total_current, 
-                                                     *(x_start[it:it_end, ip:ip_end], y_start[it:it_end, ip:ip_end], z_start, 
-                                                       z_end, z_start_int[it:it_end, ip:ip_end], z_end_int[it:it_end, ip:ip_end], z_poca[it:it_end, ip:ip_end], 
-                                                       x_p[it:it_end, ip:ip_end], y_p[it:it_end, ip:ip_end], x_step[it:it_end, ip:ip_end], y_step[it:it_end, ip:ip_end], borders[it:it_end], direction[it:it_end], sigmas[it:it_end],
-                                                       tracks_ep[it:it_end, fields.index("n_electrons")], start[it:it_end], segment[it:it_end], time_tick[it:it_end]))
+                                                     *(x_start[it:it_end, ip:ip_end].raw, y_start[it:it_end, ip:ip_end].raw, z_start.raw, 
+                                                       z_end.raw, z_start_int[it:it_end, ip:ip_end].raw, z_end_int[it:it_end, ip:ip_end].raw, z_poca[it:it_end, ip:ip_end].raw, 
+                                                       x_p[it:it_end, ip:ip_end].raw, y_p[it:it_end, ip:ip_end].raw, x_step[it:it_end, ip:ip_end].raw, y_step[it:it_end, ip:ip_end].raw, borders[it:it_end].raw, direction[it:it_end].raw, 
+                                                       sigmas[it:it_end].raw,
+                                                       tracks_ep[it:it_end, fields.index("n_electrons")].raw, start[it:it_end].raw, segment[it:it_end].raw, time_tick[it:it_end].raw))
 
-                
-                signals = ep.index_update(signals, ep.index[it:it_end, ip:ip_end, :], current_sum)
+                signals = ep.index_update(signals, ep.index[it:it_end, ip:ip_end, :], ep.astensor(current_sum))
 
         return signals.raw
 
