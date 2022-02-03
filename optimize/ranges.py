@@ -1,0 +1,13 @@
+# From https://docs.google.com/spreadsheets/d/1DLpSDgPsHeHUWCEBayYCcbLzIzd30vfBe72N-Z5vWTc/edit#gid=1247026028
+ranges = {}
+ranges['lArDensity']     = {'nom': 1.38, 'down': 1.37, 'up': 1.41}
+ranges['eField']         = {'nom': 0.5, 'down': 0.45, 'up': 0.55}
+ranges['vdrift']         = {'nom': 0.1648, 'down': 0.1400, 'up': 0.1800}
+ranges['MeVToElectrons'] = {'nom': 4.24e4, 'down': 3.48e4, 'up': 5.13e4}
+ranges['alpha']          = {'nom': 0.93, 'down': 0.85, 'up': 1.1}
+ranges['beta']           = {'nom': 0.207, 'down': 0.18, 'up': 0.22}
+ranges['Ab']             = {'nom': 0.8, 'down': 0.78, 'up': 0.88}
+ranges['kb']             = {'nom': 0.0486, 'down': 0.04, 'up': 0.07}
+ranges['lifetime']       = {'nom': 2.2e3, 'down': 300, 'up': 3e4}
+ranges['long_diff']      = {'nom': 4.0e-6, 'down': 2e-6, 'up': 9e-6}
+ranges['tran_diff']      = {'nom': 8.8e-6, 'down': 4e-6, 'up': 14e-6}
