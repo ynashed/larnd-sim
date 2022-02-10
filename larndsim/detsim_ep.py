@@ -9,7 +9,7 @@ from math import pi, ceil, sqrt, erf, exp, log, floor
 from torch.utils import checkpoint
 
 from .consts_ep import consts
-from . import fee
+from .fee_ep import fee
 
 import logging
 
