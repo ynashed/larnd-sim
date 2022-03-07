@@ -11,6 +11,10 @@ import torch
 
 from tqdm import tqdm
 
+class DataParallelWrapper(torch.nn.DataParallel):
+    def __getattr__(self, name):
+        return getattr(self.module, name)
+
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
@@ -47,8 +51,8 @@ class ParamFitter:
         self.sim_iter.init_params(self.relevant_params_list, history)
         self.sim_iter.track_params(self.relevant_params_list)
         if torch.cuda.device_count() > 1:
-            print("Using ", torch.cuda.device_count(), "GPUs!")
-            self.sim_iter = torch.nn.DataParallel(self.sim_iter)
+            print("Using", torch.cuda.device_count(), "GPUs!")
+            self.sim_iter = DataParallelWrapper(self.sim_iter)
         self.sim_iter.to(self.device)
 
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter

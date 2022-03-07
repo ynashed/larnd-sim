@@ -9,7 +9,7 @@
 INPUT_FILE=/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5
 
 singularity exec -B /sdf --nv /sdf/group/neutrino/images/latest.sif \
-            python -u -m optimize.example_run \
+            python3 -u -m optimize.example_run \
             --params lifetime \
             --input_file ${INPUT_FILE} \
             --batch_sz 1 \
