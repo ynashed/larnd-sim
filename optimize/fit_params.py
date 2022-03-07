@@ -46,6 +46,10 @@ class ParamFitter:
         # Normalize parameters to init at 1, or set to checkpointed values
         self.sim_iter.init_params(self.relevant_params_list, history)
         self.sim_iter.track_params(self.relevant_params_list)
+        if torch.cuda.device_count() > 1:
+            print("Using ", torch.cuda.device_count(), "GPUs!")
+            self.sim_iter = torch.nn.DataParallel(self.sim_iter)
+        self.sim_iter.to(self.device)
 
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
         self.sim_physics = SimModule(track_chunk=track_chunk, pixel_chunk=pixel_chunk,
