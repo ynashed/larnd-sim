@@ -1,19 +1,18 @@
-import os, sys
-larndsim_dir=os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..'))
-sys.path.insert(0, larndsim_dir)
 import pickle
 import numpy as np
 from .utils import get_id_map
 from .ranges import ranges
 from .sim_module import SimModule
-from larndsim.sim_with_grad import sim_with_grad
 import torch
 
 from tqdm import tqdm
 
 class DataParallelWrapper(torch.nn.DataParallel):
     def __getattr__(self, name):
-        return getattr(self.module, name)
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
 
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
