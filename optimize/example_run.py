@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
-import sys
+import sys, os
 import traceback
 from torch.utils.data import DataLoader
 
@@ -11,7 +11,9 @@ from .dataio import TracksDataset
 def main(config):
     dataset = TracksDataset(filename=config.input_file)
     tracks_dataloader = DataLoader(dataset,
-                                  shuffle=True, batch_size=config.batch_sz,
+                                  shuffle=False, 
+                                  batch_size=config.batch_sz,
+                                  #collate_fn=TracksDataset.collate_batch,
                                   pin_memory=True, num_workers=config.num_workers)
     param_fit = ParamFitter(config.param_list, dataset.get_track_fields(),
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
