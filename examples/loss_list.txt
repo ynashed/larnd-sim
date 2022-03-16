@@ -1,0 +1,390 @@
+/usr/local/lib/python3.8/dist-packages/torch/_tensor.py:575: UserWarning: floor_divide is deprecated, and will be removed in a future version of pytorch. It currently rounds toward 0 (like the 'trunc' function NOT 'floor'). This results in incorrect rounding for negative values.
+To keep the current behavior, use torch.div(a, b, rounding_mode='trunc'), or for actual floor division, use torch.div(a, b, rounding_mode='floor'). (Triggered internally at  /pytorch/aten/src/ATen/native/BinaryOps.cpp:467.)
+  return torch.floor_divide(self, other)
+number of qualified tracks in this sample: 127
+[[40  0]
+ [77  7]
+ [ 7 11]
+ [68  8]
+ [32  0]
+ [20  6]
+ [42  8]
+ [ 4  3]
+ [58 11]
+ [34  8]
+ [76  2]
+ [80  6]
+ [32  6]
+ [73  9]
+ [92  2]
+ [87  1]
+ [57  2]
+ [43  1]
+ [54  3]
+ [58  4]
+ [16  5]
+ [ 9  2]
+ [18  9]
+ [87  7]
+ [66  2]
+ [72  2]
+ [51  0]
+ [29  3]
+ [92  8]
+ [41  0]
+ [88 10]
+ [88  4]
+ [69  8]
+ [ 1  3]
+ [53 11]
+ [76 11]
+ [88  3]
+ [58  1]
+ [67  4]
+ [94  6]
+ [30  6]
+ [59  3]
+ [56  0]
+ [53  4]
+ [80  1]
+ [19  3]
+ [33  9]
+ [41  6]
+ [61 11]
+ [56 11]
+ [96 10]
+ [75  1]
+ [10  1]
+ [ 2  7]
+ [61  5]
+ [94  5]
+ [19 10]
+ [70 10]
+ [51  9]
+ [26  3]
+ [33  0]
+ [65  4]
+ [54  7]
+ [65  6]
+ [81  9]
+ [31  5]
+ [45  0]
+ [83  5]
+ [13  3]
+ [16  3]
+ [ 2  2]
+ [28  2]
+ [27  5]
+ [31  9]
+ [63  2]
+ [82  6]
+ [96  1]
+ [66  1]
+ [34 11]
+ [60  9]
+ [31 11]
+ [15  9]
+ [42  2]
+ [70  5]
+ [38  3]
+ [90  3]
+ [86  2]
+ [15  2]
+ [ 5 10]
+ [48  4]
+ [14  9]
+ [66  3]
+ [28  1]
+ [15 11]
+ [14  2]
+ [14  7]
+ [63 11]
+ [47  3]
+ [61  8]
+ [89  8]
+ [ 1  7]
+ [ 2  1]
+ [17  6]
+ [19  1]
+ [19  2]
+ [40  3]
+ [98 10]
+ [85  3]
+ [40  1]
+ [ 6  0]
+ [94  3]
+ [31  2]
+ [ 5  3]
+ [85  2]
+ [ 8  8]
+ [99 10]
+ [ 6 11]
+ [78  0]
+ [55 10]
+ [40 11]
+ [40  4]
+ [55  5]
+ [78  5]
+ [55  1]
+ [85  9]
+ [55  8]
+ [55  9]]
+lifetime, target: 2200.0, init 2200.0
+----i_par:  0
+i_batch: 0, ev: 40, trk: 0
+i_batch: 0, loss of this track: 0.0
+i_batch: 1, ev: 77, trk: 7
+i_batch: 1, loss of this track: 0.0
+i_batch: 2, ev: 7, trk: 11
+i_batch: 2, loss of this track: 0.0
+i_batch: 3, ev: 68, trk: 8
+i_batch: 3, loss of this track: 0.0
+i_batch: 4, ev: 32, trk: 0
+i_batch: 4, loss of this track: 0.0
+i_batch: 5, ev: 20, trk: 6
+i_batch: 5, loss of this track: 0.004301232751458883
+i_batch: 6, ev: 42, trk: 8
+i_batch: 6, loss of this track: 0.0
+i_batch: 7, ev: 4, trk: 3
+i_batch: 7, loss of this track: 0.0
+i_batch: 8, ev: 58, trk: 11
+i_batch: 8, loss of this track: 0.0
+i_batch: 9, ev: 34, trk: 8
+i_batch: 9, loss of this track: 0.0
+i_batch: 10, ev: 76, trk: 2
+i_batch: 10, loss of this track: 0.0
+i_batch: 11, ev: 80, trk: 6
+i_batch: 11, loss of this track: 0.0
+i_batch: 12, ev: 32, trk: 6
+i_batch: 12, loss of this track: 0.0
+i_batch: 13, ev: 73, trk: 9
+i_batch: 13, loss of this track: 0.0
+i_batch: 14, ev: 92, trk: 2
+i_batch: 14, loss of this track: 0.0
+i_batch: 15, ev: 87, trk: 1
+i_batch: 15, loss of this track: 0.0
+i_batch: 16, ev: 57, trk: 2
+i_batch: 16, loss of this track: 0.0
+i_batch: 17, ev: 43, trk: 1
+i_batch: 17, loss of this track: 0.0
+i_batch: 18, ev: 54, trk: 3
+i_batch: 18, loss of this track: 0.0
+i_batch: 19, ev: 58, trk: 4
+i_batch: 19, loss of this track: 0.009350446984171867
+i_batch: 20, ev: 16, trk: 5
+i_batch: 20, loss of this track: 0.0
+i_batch: 21, ev: 9, trk: 2
+i_batch: 21, loss of this track: 0.0036782275419682264
+i_batch: 22, ev: 18, trk: 9
+i_batch: 22, loss of this track: 0.0
+i_batch: 23, ev: 87, trk: 7
+i_batch: 23, loss of this track: 0.0
+i_batch: 24, ev: 66, trk: 2
+i_batch: 24, loss of this track: 0.0
+i_batch: 25, ev: 72, trk: 2
+i_batch: 25, loss of this track: 0.0
+i_batch: 26, ev: 51, trk: 0
+i_batch: 26, loss of this track: 0.0
+i_batch: 27, ev: 29, trk: 3
+i_batch: 27, loss of this track: 0.0
+i_batch: 28, ev: 92, trk: 8
+i_batch: 28, loss of this track: 0.0
+i_batch: 29, ev: 41, trk: 0
+i_batch: 29, loss of this track: 0.0
+i_batch: 30, ev: 88, trk: 10
+i_batch: 30, loss of this track: 0.0
+i_batch: 31, ev: 88, trk: 4
+i_batch: 31, loss of this track: 0.0
+i_batch: 32, ev: 69, trk: 8
+i_batch: 32, loss of this track: 0.0
+i_batch: 33, ev: 1, trk: 3
+i_batch: 33, loss of this track: 0.0
+i_batch: 34, ev: 53, trk: 11
+i_batch: 34, loss of this track: 5.939557021198316e-16
+i_batch: 35, ev: 76, trk: 11
+i_batch: 35, loss of this track: 0.0018310875166207552
+i_batch: 36, ev: 88, trk: 3
+i_batch: 36, loss of this track: 0.0
+i_batch: 37, ev: 58, trk: 1
+i_batch: 37, loss of this track: 0.0
+i_batch: 38, ev: 67, trk: 4
+i_batch: 38, loss of this track: 0.0028719145338982344
+i_batch: 39, ev: 94, trk: 6
+i_batch: 39, loss of this track: 0.0
+i_batch: 40, ev: 30, trk: 6
+i_batch: 40, loss of this track: 0.0
+i_batch: 41, ev: 59, trk: 3
+i_batch: 41, loss of this track: 0.0
+i_batch: 42, ev: 56, trk: 0
+i_batch: 42, loss of this track: 0.0
+i_batch: 43, ev: 53, trk: 4
+i_batch: 43, loss of this track: 0.0
+i_batch: 44, ev: 80, trk: 1
+i_batch: 44, loss of this track: 0.0
+i_batch: 45, ev: 19, trk: 3
+i_batch: 45, loss of this track: 0.0
+i_batch: 46, ev: 33, trk: 9
+i_batch: 46, loss of this track: 0.0
+i_batch: 47, ev: 41, trk: 6
+i_batch: 47, loss of this track: 0.0
+i_batch: 48, ev: 61, trk: 11
+i_batch: 48, loss of this track: 0.0
+i_batch: 49, ev: 56, trk: 11
+i_batch: 49, loss of this track: 0.0
+i_batch: 50, ev: 96, trk: 10
+i_batch: 50, loss of this track: 0.0
+i_batch: 51, ev: 75, trk: 1
+i_batch: 51, loss of this track: 0.0
+i_batch: 52, ev: 10, trk: 1
+i_batch: 52, loss of this track: 0.0
+i_batch: 53, ev: 2, trk: 7
+i_batch: 53, loss of this track: 0.0
+i_batch: 54, ev: 61, trk: 5
+i_batch: 54, loss of this track: 0.0
+i_batch: 55, ev: 94, trk: 5
+i_batch: 55, loss of this track: 0.0017264926573261619
+i_batch: 56, ev: 19, trk: 10
+i_batch: 56, loss of this track: 0.0
+i_batch: 57, ev: 70, trk: 10
+i_batch: 57, loss of this track: 0.0
+i_batch: 58, ev: 51, trk: 9
+i_batch: 58, loss of this track: 0.0
+i_batch: 59, ev: 26, trk: 3
+i_batch: 59, loss of this track: 0.0019647167064249516
+i_batch: 60, ev: 33, trk: 0
+i_batch: 60, loss of this track: 0.0
+i_batch: 61, ev: 65, trk: 4
+i_batch: 61, loss of this track: 0.0016473790165036917
+i_batch: 62, ev: 54, trk: 7
+i_batch: 62, loss of this track: 0.0
+i_batch: 63, ev: 65, trk: 6
+i_batch: 63, loss of this track: 0.0
+i_batch: 64, ev: 81, trk: 9
+i_batch: 64, loss of this track: 0.0
+i_batch: 65, ev: 31, trk: 5
+i_batch: 65, loss of this track: 0.0
+i_batch: 66, ev: 45, trk: 0
+i_batch: 66, loss of this track: 0.0
+i_batch: 67, ev: 83, trk: 5
+i_batch: 67, loss of this track: 0.0
+i_batch: 68, ev: 13, trk: 3
+i_batch: 68, loss of this track: 0.0
+i_batch: 69, ev: 16, trk: 3
+i_batch: 69, loss of this track: 0.0
+i_batch: 70, ev: 2, trk: 2
+i_batch: 70, loss of this track: 0.0
+i_batch: 71, ev: 28, trk: 2
+i_batch: 71, loss of this track: 0.0
+i_batch: 72, ev: 27, trk: 5
+i_batch: 72, loss of this track: 0.0
+i_batch: 73, ev: 31, trk: 9
+i_batch: 73, loss of this track: 0.0
+i_batch: 74, ev: 63, trk: 2
+i_batch: 74, loss of this track: 0.0
+i_batch: 75, ev: 82, trk: 6
+i_batch: 75, loss of this track: 0.0
+i_batch: 76, ev: 96, trk: 1
+i_batch: 76, loss of this track: 0.0
+i_batch: 77, ev: 66, trk: 1
+i_batch: 77, loss of this track: 0.0
+i_batch: 78, ev: 34, trk: 11
+i_batch: 78, loss of this track: 0.0
+i_batch: 79, ev: 60, trk: 9
+i_batch: 79, loss of this track: 0.0
+i_batch: 80, ev: 31, trk: 11
+i_batch: 80, loss of this track: 0.0
+i_batch: 81, ev: 15, trk: 9
+i_batch: 81, loss of this track: 0.0
+i_batch: 82, ev: 42, trk: 2
+i_batch: 82, loss of this track: 0.0
+i_batch: 83, ev: 70, trk: 5
+i_batch: 83, loss of this track: 0.0
+i_batch: 84, ev: 38, trk: 3
+i_batch: 84, loss of this track: 0.0
+i_batch: 85, ev: 90, trk: 3
+i_batch: 85, loss of this track: 0.0
+i_batch: 86, ev: 86, trk: 2
+i_batch: 86, loss of this track: 0.0
+i_batch: 87, ev: 15, trk: 2
+i_batch: 87, loss of this track: 0.0
+i_batch: 88, ev: 5, trk: 10
+i_batch: 88, loss of this track: 0.0
+i_batch: 89, ev: 48, trk: 4
+i_batch: 89, loss of this track: 0.0
+i_batch: 90, ev: 14, trk: 9
+i_batch: 90, loss of this track: 0.010682057589292526
+i_batch: 91, ev: 66, trk: 3
+i_batch: 91, loss of this track: 0.001372873317450285
+i_batch: 92, ev: 28, trk: 1
+i_batch: 92, loss of this track: 0.0
+i_batch: 93, ev: 15, trk: 11
+i_batch: 93, loss of this track: 0.0
+i_batch: 94, ev: 14, trk: 2
+i_batch: 94, loss of this track: 0.0
+i_batch: 95, ev: 14, trk: 7
+i_batch: 95, loss of this track: 0.0
+i_batch: 96, ev: 63, trk: 11
+i_batch: 96, loss of this track: 0.0
+i_batch: 97, ev: 47, trk: 3
+i_batch: 97, loss of this track: 0.0
+i_batch: 98, ev: 61, trk: 8
+i_batch: 98, loss of this track: 0.0
+i_batch: 99, ev: 89, trk: 8
+i_batch: 99, loss of this track: 0.0
+i_batch: 100, ev: 1, trk: 7
+i_batch: 100, loss of this track: 0.0
+i_batch: 101, ev: 2, trk: 1
+i_batch: 101, loss of this track: 0.0
+i_batch: 102, ev: 17, trk: 6
+i_batch: 102, loss of this track: 0.0
+i_batch: 103, ev: 19, trk: 1
+i_batch: 103, loss of this track: 0.0
+i_batch: 104, ev: 19, trk: 2
+i_batch: 104, loss of this track: 0.021475737914443016
+i_batch: 105, ev: 40, trk: 3
+i_batch: 105, loss of this track: 0.0
+i_batch: 106, ev: 98, trk: 10
+i_batch: 106, loss of this track: 0.0
+i_batch: 107, ev: 85, trk: 3
+i_batch: 107, loss of this track: 0.0
+i_batch: 108, ev: 40, trk: 1
+i_batch: 108, loss of this track: 0.003559695091098547
+i_batch: 109, ev: 6, trk: 0
+i_batch: 109, loss of this track: 0.0
+i_batch: 110, ev: 94, trk: 3
+i_batch: 110, loss of this track: 0.006613749545067549
+i_batch: 111, ev: 31, trk: 2
+i_batch: 111, loss of this track: 0.0
+i_batch: 112, ev: 5, trk: 3
+i_batch: 112, loss of this track: 0.0
+i_batch: 113, ev: 85, trk: 2
+i_batch: 113, loss of this track: 0.0
+i_batch: 114, ev: 8, trk: 8
+i_batch: 114, loss of this track: 0.0
+i_batch: 115, ev: 99, trk: 10
+i_batch: 115, loss of this track: 0.0
+i_batch: 116, ev: 6, trk: 11
+i_batch: 116, loss of this track: 0.0
+i_batch: 117, ev: 78, trk: 0
+i_batch: 117, loss of this track: 0.0
+i_batch: 118, ev: 55, trk: 10
+i_batch: 118, loss of this track: 0.0
+i_batch: 119, ev: 40, trk: 11
+i_batch: 119, loss of this track: 0.0
+i_batch: 120, ev: 40, trk: 4
+i_batch: 120, loss of this track: 0.003967498429119587
+i_batch: 121, ev: 55, trk: 5
+i_batch: 121, loss of this track: 0.0
+i_batch: 122, ev: 78, trk: 5
+i_batch: 122, loss of this track: 0.0
+i_batch: 123, ev: 55, trk: 1
+i_batch: 123, loss of this track: 0.0
+i_batch: 124, ev: 85, trk: 9
+i_batch: 124, loss of this track: 0.0
+i_batch: 125, ev: 55, trk: 8
+i_batch: 125, loss of this track: 0.0
+i_batch: 126, ev: 55, trk: 9
+i_batch: 126, loss of this track: 0.0
+time of this iteration: 3710.84 s
+--loss at this value: 0.0005908906267310621
+scan time: 3710.84 s

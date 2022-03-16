@@ -33,9 +33,9 @@ class fee(consts):
         #: Number of ADC counts
         self.ADC_COUNTS = 2**8
         #: Reset noise in e-
-        self.RESET_NOISE_CHARGE = 900
+        self.RESET_NOISE_CHARGE = 900 * 0
         #: Uncorrelated noise in e-
-        self.UNCORRELATED_NOISE_CHARGE = 500
+        self.UNCORRELATED_NOISE_CHARGE = 500 * 0
 
     def digitize(self, integral_list):
         """
