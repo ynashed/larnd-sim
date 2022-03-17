@@ -112,6 +112,9 @@ class ParamFitter:
                     # Zero gradients
                     self.optimizer.zero_grad()
 
+                    # Get rid of the extra dimension and padding elements for the loaded data
+                    selected_tracks_torch = torch.flatten(selected_tracks_torch, start_dim=0, end_dim=1)
+                    selected_tracks_torch = selected_tracks_torch[selected_tracks_torch[:, self.track_fields.index("dx")] > 0]
                     event_id_map, unique_eventIDs = get_id_map(selected_tracks_torch, self.track_fields, self.device)
                     selected_tracks_torch = selected_tracks_torch.to(self.device)
 

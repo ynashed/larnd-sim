@@ -30,33 +30,33 @@ class TracksDataset(Dataset):
             tracks['z_end'] = x_end
             tracks['z'] = x
 
-        tracks = tracks[:300]
+        tracks = tracks[200:250]
         self.track_fields = tracks.dtype.names
-        self.tracks = torch_from_structured(tracks)
+        #self.tracks = torch_from_structured(tracks)
 
         # flat index for eventID and trackID
         self.index = []
         num_tracks = 0
+        all_tracks = []
         all_events = np.unique(tracks['eventID'])
         for ev in all_events:
             track_set = np.unique(tracks[tracks['eventID'] == ev]['trackID'])
             for trk in track_set:
                 # basic track selection
                 trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
-                if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > 30:
+                if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > 3:
                     # add event, track index to the list
                     self.index.append([ev, trk])
-         
-        print(self.index)
+                    all_tracks.append(torch_from_structured(tracks[trk_msk]))
+        self.tracks = torch.nn.utils.rnn.pad_sequence(all_tracks, batch_first=True, padding_value = -99) 
+        print("trainning track set [ev, trk]: ", self.index)
 
     def __len__(self):
         return len(self.tracks)
 
     def __getitem__(self, idx):
-        print("idx: ", idx)
-        idx_mask = (self.tracks[:, self.track_fields.index('eventID')] == self.index[idx][0]) & (self.tracks[:, self.track_fields.index('trackID')] == self.index[idx][1])
-        return self.tracks[idx_mask]
-
+        return self.tracks[idx]
+        
     def get_track_fields(self):
         return self.track_fields
 
