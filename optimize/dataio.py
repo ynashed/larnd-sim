@@ -44,7 +44,9 @@ class TracksDataset(Dataset):
             for trk in track_set:
                 # basic track selection
                 trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
-                if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > 3:
+                #TODO once we enter the end game, this selection condition needs to be more accessible. 
+                # For now, we keep it as it is to take consistent data among developers
+                if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > 30:
                     # add event, track index to the list
                     self.index.append([ev, trk])
                     all_tracks.append(torch_from_structured(tracks[trk_msk]))
