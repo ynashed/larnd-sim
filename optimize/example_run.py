@@ -9,7 +9,7 @@ from .fit_params import ParamFitter
 from .dataio import TracksDataset
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file)
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz)
     tracks_dataloader = DataLoader(dataset,
                                   shuffle=True, 
                                   batch_size=config.batch_sz,
@@ -52,6 +52,8 @@ if __name__ == '__main__':
                         help="Number of epochs")
     parser.add_argument("--seed", dest="seed", default=2, type=int,
                         help="Random seed for target construction")
+    parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
+                        help="data size for fitting (number of tracks)")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)

@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from numpy.lib import recfunctions as rfn
+import random
 
 def torch_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)
@@ -12,7 +13,7 @@ def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
 class TracksDataset(Dataset):
-    def __init__(self, filename, swap_xz=True):
+    def __init__(self, filename, ntrack, swap_xz=True):
 
         with h5py.File(filename, 'r') as f:
             tracks = np.array(f['segments'])
@@ -30,28 +31,38 @@ class TracksDataset(Dataset):
             tracks['z_end'] = x_end
             tracks['z'] = x
 
-        tracks = tracks[200:250]
         self.track_fields = tracks.dtype.names
-        #self.tracks = torch_from_structured(tracks)
 
-        # flat index for eventID and trackID
-        self.index = []
-        num_tracks = 0
+        # flat index for all reasonable track [eventID, trackID] 
+        index = []
         all_tracks = []
-        all_events = np.unique(tracks['eventID'])
-        for ev in all_events:
+        for ev in np.unique(tracks['eventID']):
             track_set = np.unique(tracks[tracks['eventID'] == ev]['trackID'])
             for trk in track_set:
-                # basic track selection
                 trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
-                #TODO once we enter the end game, this selection condition needs to be more accessible. 
+                #TODO once we enter the end game, this track selection requirement needs to be more accessible. 
                 # For now, we keep it as it is to take consistent data among developers
                 if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > 30:
-                    # add event, track index to the list
-                    self.index.append([ev, trk])
+                    index.append([ev, trk])
                     all_tracks.append(torch_from_structured(tracks[trk_msk]))
-        self.tracks = torch.nn.utils.rnn.pad_sequence(all_tracks, batch_first=True, padding_value = -99) 
-        print("trainning track set [ev, trk]: ", self.index)
+
+        # all fit with a sub-set of tracks
+        fit_index = []
+        fit_tracks = []
+        if ntrack >= len(index):
+            self.tracks = torch.nn.utils.rnn.pad_sequence(all_tracks, batch_first=True, padding_value = -99) 
+            fit_index = index
+        else:
+            # if the information of track index is uninteresting, then the next line + pad_sequence is enough
+            # fit_tracks = random.sample(all_tracks, ntrack)
+            list_rand = random.sample(range(len(index)), ntrack)
+            for i_rand in list_rand:
+                fit_index.append(index[i_rand])
+                fit_tracks.append(all_tracks[i_rand])
+            self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = -99) 
+        
+        #self.tracks = torch.nn.utils.rnn.pad_sequence(all_tracks, batch_first=True, padding_value = -99) 
+        print("trainning set [ev, trk]: ", fit_index)
 
     def __len__(self):
         return len(self.tracks)
