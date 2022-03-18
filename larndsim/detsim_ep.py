@@ -141,8 +141,11 @@ class detsim(consts):
     def cdf(self, x):
         return 1/2 * (1 + self.erf_hack(x/np.sqrt(2)))
 
-    def skew_normal(self, x, alpha):
-        return 2*self.normal(x, 0, 1)*self.cdf(alpha*x)
+    def skew_normal(self, x, alpha, sigma=1):
+        return 2*self.normal(x, 0, sigma)*self.cdf(alpha*x)
+
+    def sigmoid(self, x):
+        return 1. / (1 + ep.exp(-x))
 
     def rho(self, point, q, start, sigmas, segment):
         """
@@ -207,8 +210,10 @@ class detsim(consts):
         y = ep.maximum(y, -10.)
         #Make everything positive and then mask to avoid infs
         #return (ep.exp(-ep.abs(y)) * (y>0)) / scale
-        return 1.25*self.skew_normal(y, 100)
+        #return 1.25*self.skew_normal(y, 100)
+        #return 25.0663*self.skew_normal(y, 1000, sigma=20)*ep.exp(-y)
         #return (ep.sign(y)+1) / 2. * ep.exp(-y) / scale #* STEFunction.apply(y.raw)
+        return self.sigmoid(40*y)*ep.exp(-y) / scale
         #return ep.exp(-y) / scale
 
     def current_model(self, t, t0, x, y):
