@@ -6,8 +6,9 @@
 #SBATCH --mem=131072
 
 INPUT_FILE=/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5
+SIF_FILE=/sdf/group/neutrino/images/latest.sif
 
-singularity exec -B /sdf --nv /sdf/group/neutrino/images/latest.sif \
+singularity exec -B /sdf --nv ${SIF_FILE} \
             python3 -u -m optimize.example_run \
             --params lifetime \
             --input_file ${INPUT_FILE} \
