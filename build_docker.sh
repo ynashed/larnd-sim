@@ -10,11 +10,4 @@ fi
 echo working directory is $(pwd)
 echo directory to build is $1
 
-git_branch=$(git rev-parse --symbolic-full-name --abbrev-ref HEAD)
-git_repo=$(basename -s .git `git config --get remote.origin.url`)
-git_repo=${git_repo,,}
-echo git_repo: ${git_repo}
-echo git_branch: ${git_branch}
-
-#docker build --no-cache -t ${2}/${git_repo}-${git_branch}:latest $1
-docker build ${3} -t ${2}/${git_repo}-${git_branch}:latest $1
+docker build ${3} -t ${2}/larndsim:latest $1
