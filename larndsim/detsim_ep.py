@@ -145,7 +145,8 @@ class detsim(consts):
         return 2*self.normal(x, 0, sigma)*self.cdf(alpha*x)
 
     def sigmoid(self, x):
-        return 1. / (1 + ep.exp(-x))
+        return ep.astensor(torch.sigmoid(x.raw))
+        #return 1. / (1 + ep.exp(-x))
 
     def rho(self, point, q, start, sigmas, segment):
         """
@@ -206,14 +207,14 @@ class detsim(consts):
         To shift and/or scale the distribution use the `loc` and `scale` parameters.
         """
         y = (x - loc) / scale
-  
+         
         y = ep.maximum(y, -10.)
         #Make everything positive and then mask to avoid infs
         #return (ep.exp(-ep.abs(y)) * (y>0)) / scale
         #return 1.25*self.skew_normal(y, 100)
         #return 25.0663*self.skew_normal(y, 1000, sigma=20)*ep.exp(-y)
         #return (ep.sign(y)+1) / 2. * ep.exp(-y) / scale #* STEFunction.apply(y.raw)
-        return self.sigmoid(40*y)*ep.exp(-y) / scale
+        return self.sigmoid(100*y)*ep.exp(-y) / scale
         #return ep.exp(-y) / scale
 
     def current_model(self, t, t0, x, y):
@@ -249,7 +250,7 @@ class detsim(consts):
 
         a = ep.minimum(a, 1)
 
-        return a * self.truncexpon(-t, -shifted_t0, b) + (1 - a) * self.truncexpon(-t, -shifted_t0, c)
+        return a * self.truncexpon(-t, -shifted_t0, b) + (1 - a) * self.truncexpon(-t, -shifted_t0, c) 
 
 
     def track_point(self, start, direction, z):
@@ -428,7 +429,6 @@ class detsim(consts):
         borders = ep.stack([tpc_borders_ep[x.astype(int)] for x in tracks_ep[:, fields.index("pixel_plane")]])
 
         signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max))
-        charges = []
         for it in range(0, z_start.shape[0], self.track_chunk):
             it_end = min(it + self.track_chunk, z_start.shape[0])
             for ip in range(0, z_start.shape[1], self.pixel_chunk):
@@ -450,7 +450,6 @@ class detsim(consts):
                                                        tracks_ep[it:it_end, fields.index("n_electrons")].raw, start[it:it_end].raw, segment[it:it_end].raw, time_tick[it:it_end].raw, self.vdrift)
  
                 signals = ep.index_update(signals, ep.index[it:it_end, ip:ip_end, :], ep.astensor(current_sum))
-                
         return signals.raw
 
 
