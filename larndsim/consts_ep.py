@@ -8,6 +8,9 @@ import torch
 
 class consts:
     def __init__(self):
+        ## Turn smoothing on/off to help gradients
+        self.smooth = True
+
         ## Detector constants
         #: Liquid argon density in :math:`g/cm^3`
         self.lArDensity = 1.38 # g/cm^3
