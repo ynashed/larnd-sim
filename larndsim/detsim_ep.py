@@ -10,7 +10,6 @@ from torch.utils import checkpoint
 
 from .consts_ep import consts
 from .fee_ep import fee
-from .utils import diff_linspace, diff_arange
 
 import torch.nn.functional as F
 
@@ -135,18 +134,9 @@ class detsim(consts):
     def erf_hack(self, input):
         return ep.astensor(torch.erf(input.raw))
 
-    def normal(self, x, mu, sigma):
-        return 1/(sigma*np.sqrt(2*pi))*ep.exp(-(x - mu)**2/(2*sigma**2))
-
-    def cdf(self, x):
-        return 1/2 * (1 + self.erf_hack(x/np.sqrt(2)))
-
-    def skew_normal(self, x, alpha, sigma=1):
-        return 2*self.normal(x, 0, sigma)*self.cdf(alpha*x)
-
     def sigmoid(self, x):
+        # Using torch here, otherwise we get overflow -- might be able to get around with a trick
         return ep.astensor(torch.sigmoid(x.raw))
-        #return 1. / (1 + ep.exp(-x))
 
     def rho(self, point, q, start, sigmas, segment):
         """
@@ -312,10 +302,7 @@ class detsim(consts):
 
         z_step = (z_end_int - z_start_int) / (z_steps - 1)
 
-
-        #iz = ep.arange(z_steps, 0, z_steps.max().item())
-        #iz = diff_linspace(torch.tensor(0.), z_steps.max(), z_steps.max().item())
-        iz = diff_arange(ep.astensor(torch.tensor(0.)), z_steps.max())
+        iz = ep.arange(z_steps, 0, z_steps.max().item())
         z =  z_start_int[:, :, ep.newaxis] + iz[ep.newaxis, ep.newaxis, :] * z_step[..., ep.newaxis]
 
         t0 = (ep.abs(z - borders[:, 2, 0, ep.newaxis, ep.newaxis]) - 0.5) / vdrift
