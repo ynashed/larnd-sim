@@ -201,21 +201,21 @@ class detsim(consts):
         # Ask about the x_dist, y_dist > pixel_pitch/2 conditions in the original simulation
         return expo
 
-    def truncexpon(self, x, loc=0, scale=1):
+    def truncexpon(self, x, loc=0, scale=1, y_cutoff=-10., rate=100):
         """
         A truncated exponential distribution.
         To shift and/or scale the distribution use the `loc` and `scale` parameters.
         """
         y = (x - loc) / scale
          
-        y = ep.maximum(y, -10.)
-        #Make everything positive and then mask to avoid infs
-        #return (ep.exp(-ep.abs(y)) * (y>0)) / scale
-        #return 1.25*self.skew_normal(y, 100)
-        #return 25.0663*self.skew_normal(y, 1000, sigma=20)*ep.exp(-y)
-        #return (ep.sign(y)+1) / 2. * ep.exp(-y) / scale #* STEFunction.apply(y.raw)
-        return self.sigmoid(100*y)*ep.exp(-y) / scale
-        #return ep.exp(-y) / scale
+        if self.smooth:
+            # Use smoothed mask to make derivatives nicer
+            # y cutoff stops exp from blowing up -- should be far enough away from 0 that sigmoid is small
+            y = ep.maximum(y, y_cutoff)
+            return self.sigmoid(rate*y)*ep.exp(-y) / scale
+        else:
+            # Make everything positive and then mask to avoid nans
+            return (ep.exp(-ep.abs(y)) * (y>0)) / scale
 
     def current_model(self, t, t0, x, y):
         """

@@ -53,7 +53,7 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
 
     unique_pix_torch = torch.empty((0, 2), device=neighboring_pixels_torch.device)
     pixels_signals_torch = torch.zeros((len(unique_pix_torch), len(sim.time_ticks)*50),
-                                       device=unique_pix_torch.device)
+                                       device=unique_pix_torch.device, dtype=selected_tracks.dtype)
 
     shapes_torch = neighboring_pixels_torch.shape
     joined_torch = neighboring_pixels_torch.reshape(shapes_torch[0]*shapes_torch[1], 2)
