@@ -11,8 +11,6 @@ from torch.utils import checkpoint
 from .consts_ep import consts
 from .fee_ep import fee
 
-import torch.nn.functional as F
-
 import logging
 
 logging.basicConfig()
@@ -298,7 +296,7 @@ class detsim(consts):
 
         z_sampling = self.t_sampling / 2.
         z_steps = ep.maximum(self.sampled_points, ((ep.abs(z_end_int
-                                                    - z_start_int) / z_sampling)+1.))
+                                                    - z_start_int) / z_sampling)+1.).astype(int))
 
         z_step = (z_end_int - z_start_int) / (z_steps - 1)
 
