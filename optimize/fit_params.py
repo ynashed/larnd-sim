@@ -112,10 +112,10 @@ class ParamFitter:
         # The training loop
         with tqdm(total=len(dataloader) * epochs) as pbar:
             for epoch in range(epochs):
-                for i, selected_tracks_torch in enumerate(dataloader):
-                    # Losses for each batch -- used to compute epoch loss
-                    losses_batch=[]
 
+                # Losses for each batch -- used to compute epoch loss
+                losses_batch=[]
+                for i, selected_tracks_torch in enumerate(dataloader):
                     # Zero gradients
                     self.optimizer.zero_grad()
 
