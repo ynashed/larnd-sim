@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 import sys
 import traceback
+import torch
 from torch.utils.data import DataLoader
+import torch.distributed as dist
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
@@ -51,8 +54,24 @@ if __name__ == '__main__':
                         help="Number of epochs")
     parser.add_argument("--seed", dest="seed", default=2, type=int,
                         help="Random seed for target construction")
+    parser.add_argument("--local_rank", default=0, type=int)
+
     try:
         args = parser.parse_args()
+        args_dict = vars(args)
+        args_dict['world_size'] = 1
+        if 'WORLD_SIZE' in os.environ:
+            args_dict['world_size'] = int(os.environ['WORLD_SIZE'])
+
+        args_dict['local_rank'] = args.local_rank
+        args_dict['world_rank'] = 0
+        if args_dict['world_size'] > 1:
+            torch.cuda.set_device(args.local_rank)
+            dist.init_process_group(backend='nccl',
+                                    init_method='env://')
+            args_dict['world_rank'] = dist.get_rank()
+            args_dict['global_batch_size'] = args.batch_sz
+            args_dict['batch_sz'] = int(args.batch_sz // args.world_size)
         retval, status_message = main(args)
     except Exception as e:
         print(traceback.format_exc(), file=sys.stderr)
