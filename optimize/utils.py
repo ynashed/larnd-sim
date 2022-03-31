@@ -96,19 +96,24 @@ def update_grad_param(sim, name, value):
     sim.track_gradients([name])
 
 # ADC counts given as list of pixels. Better for loss to embed this in the "full" pixel space
-def embed_adc_list(sim, adc_list, unique_pix):
+def embed_adc_list(sim, adc_list, unique_pix, ticks_list):
     zero_val = sim.digitize(torch.tensor(0)).item()
-    new_list = torch.ones((sim.n_pixels[0], sim.n_pixels[1], adc_list.shape[1], 2), device=unique_pix.device, dtype=adc_list.dtype)*zero_val
-
+    new_list = torch.ones((sim.n_pixels[0], sim.n_pixels[1], len(sim.time_ticks)*3, 2), device=unique_pix.device, dtype=adc_list.dtype)*zero_val
+    
+    time_idx = ticks_list // sim.t_sampling
+    
     plane_id = unique_pix[..., 0] // sim.n_pixels[0]
     unique_pix_mod = unique_pix.clone()
     unique_pix_mod[..., 0] = unique_pix_mod[..., 0] - sim.n_pixels[0] * plane_id
 
-    plane0_pix = unique_pix_mod[plane_id==0]
-    plane1_pix = unique_pix_mod[plane_id==1]
+    plane0_pix = torch.tile(unique_pix_mod[plane_id==0][:, :, None], (1, 1, 10))
+    plane1_pix = torch.tile(unique_pix_mod[plane_id==1][:, :, None], (1, 1, 10))
+    
+    plane0_tidx = time_idx[plane_id == 0].flatten()
+    plane1_tidx = time_idx[plane_id == 1].flatten()
 
-    new_list[plane0_pix[:, 0].long(), plane0_pix[:, 1].long(), :, 0] = adc_list[plane_id == 0]
-    new_list[plane1_pix[:, 0].long(), plane1_pix[:, 1].long(), :, 1] = adc_list[plane_id == 1]
+    new_list[plane0_pix[:, 0].long().flatten(), plane0_pix[:, 1].long().flatten(), plane0_tidx.long(), 0] = adc_list[plane_id == 0].flatten()
+    new_list[plane1_pix[:, 0].long().flatten(), plane1_pix[:, 1].long().flatten(), plane1_tidx.long(), 1] = adc_list[plane_id == 1].flatten()
 
     return new_list
 
