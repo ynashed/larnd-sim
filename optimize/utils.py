@@ -98,15 +98,19 @@ def update_grad_param(sim, name, value):
 # ADC counts given as list of pixels. Better for loss to embed this in the "full" pixel space
 def embed_adc_list(sim, adc_list, unique_pix):
     zero_val = sim.digitize(torch.tensor(0)).item()
-    new_list = torch.ones((sim.n_pixels[0], sim.n_pixels[1], adc_list.shape[1]), device=unique_pix.device)*zero_val
+    new_list = torch.ones((sim.n_pixels[0], sim.n_pixels[1], adc_list.shape[1], 2), device=unique_pix.device, dtype=adc_list.dtype)*zero_val
 
     plane_id = unique_pix[..., 0] // sim.n_pixels[0]
-    unique_pix[..., 0] = unique_pix[..., 0] - sim.n_pixels[0] * plane_id
+    unique_pix_mod = unique_pix.clone()
+    unique_pix_mod[..., 0] = unique_pix_mod[..., 0] - sim.n_pixels[0] * plane_id
 
-    new_list[unique_pix[:, 0].long(), unique_pix[:, 1].long(), :] = adc_list
-    
+    plane0_pix = unique_pix_mod[plane_id==0]
+    plane1_pix = unique_pix_mod[plane_id==1]
+
+    new_list[plane0_pix[:, 0].long(), plane0_pix[:, 1].long(), :, 0] = adc_list[plane_id == 0]
+    new_list[plane1_pix[:, 0].long(), plane1_pix[:, 1].long(), :, 1] = adc_list[plane_id == 1]
+
     return new_list
-
 
 def param_l2_reg(param, sim):
     sigma = (ranges[param]['up'] - ranges[param]['down'])/2.
