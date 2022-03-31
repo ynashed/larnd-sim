@@ -3,7 +3,7 @@ import os, sys
 larndsim_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, larndsim_dir)
 from larndsim.sim_with_grad import sim_with_grad
-from .ranges import ranges
+from ranges import ranges
 from torch import nn
 import torch
 import numpy as np

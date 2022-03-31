@@ -1,8 +1,8 @@
 import pickle
 import numpy as np
-from .utils import get_id_map
-from .ranges import ranges
-from .sim_module import SimModule
+from utils import get_id_map
+from ranges import ranges
+from sim_module import SimModule
 import torch
 
 from tqdm import tqdm

@@ -8,8 +8,8 @@ import torch
 from torch.utils.data import DataLoader
 import torch.distributed as dist
 
-from .fit_params import ParamFitter
-from .dataio import TracksDataset
+from fit_params import ParamFitter
+from dataio import TracksDataset
 
 def main(config):
     dataset = TracksDataset(filename=config.input_file)
