@@ -25,7 +25,7 @@ def main(config):
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
                             load_checkpoint=config.load_checkpoint, lr=config.lr)
     param_fit.make_target_sim(seed=config.seed)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs)
+    param_fit.fit(tracks_dataloader, sampler, epochs=config.epochs)
 
     return 0, 'Fitting successful'
 
