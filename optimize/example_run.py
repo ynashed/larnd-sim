@@ -58,7 +58,6 @@ if __name__ == '__main__':
                         help="Number of epochs")
     parser.add_argument("--seed", dest="seed", default=2, type=int,
                         help="Random seed for target construction")
-    parser.add_argument("--local_rank", default=0, type=int)
 
     try:
         args = parser.parse_args()
@@ -66,8 +65,8 @@ if __name__ == '__main__':
         args_dict['world_size'] = 1
         if 'WORLD_SIZE' in os.environ:
             args_dict['world_size'] = int(os.environ['WORLD_SIZE'])
-
-        args_dict['local_rank'] = args.local_rank
+        if 'LOCAL_RANK' in os.environ:
+            args_dict['local_rank'] = int(os.environ["LOCAL_RANK"])
         args_dict['world_rank'] = 0
         if args_dict['world_size'] > 1:
             torch.cuda.set_device(args.local_rank)

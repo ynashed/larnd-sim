@@ -53,6 +53,7 @@ class ParamFitter:
         self.sim_iter.to(self.device)
         if world_size > 1:
             self.sim_iter = DistDataParallelWrapper(self.sim_iter,
+                                                    find_unused_parameters=True,
                                                     device_ids=[local_rank],
                                                     output_device=[local_rank])
 
@@ -109,6 +110,8 @@ class ParamFitter:
             for epoch in range(epochs):
                 if sampler is not None:
                     sampler.set_epoch(epoch)
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
                 for i, selected_tracks_torch in enumerate(dataloader):
                     # Losses for each batch -- used to compute epoch loss
                     losses_batch=[]
