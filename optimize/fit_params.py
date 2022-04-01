@@ -4,10 +4,11 @@ from utils import get_id_map
 from ranges import ranges
 from sim_module import SimModule
 import torch
+from torch.nn.parallel import DistributedDataParallel
 
 from tqdm import tqdm
 
-class DataParallelWrapper(torch.nn.DataParallel):
+class DistDataParallelWrapper(DistributedDataParallel):
     def __getattr__(self, name):
         try:
             return super().__getattr__(name)
@@ -16,12 +17,12 @@ class DataParallelWrapper(torch.nn.DataParallel):
 
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
-                 detector_props, pixel_layouts, load_checkpoint = None,
-                 lr=None, optimizer=None, loss_fn=None):
+                 detector_props, pixel_layouts, local_rank=0, world_size=1,
+                 load_checkpoint = None, lr=None, optimizer=None, loss_fn=None):
 
         # If you have access to a GPU, sim works trivially/is much faster
         if torch.cuda.is_available():
-            self.device = 'cuda'
+            self.device = torch.cuda.current_device()
             # torch.set_default_tensor_type('torch.cuda.FloatTensor')
         else:
             self.device = 'cpu'
@@ -49,14 +50,19 @@ class ParamFitter:
         # Normalize parameters to init at 1, or set to checkpointed values
         self.sim_iter.init_params(self.relevant_params_list, history)
         self.sim_iter.track_params(self.relevant_params_list)
-        if torch.cuda.device_count() > 1:
-            print("Using", torch.cuda.device_count(), "GPUs!")
-            self.sim_iter = DataParallelWrapper(self.sim_iter)
         self.sim_iter.to(self.device)
 
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
         self.sim_physics = SimModule(track_chunk=track_chunk, pixel_chunk=pixel_chunk,
                                      detector_props=detector_props, pixel_layouts=pixel_layouts)
+        self.sim_physics.to(self.device)
+        if world_size > 1:
+            self.sim_iter = DistDataParallelWrapper(self.sim_iter,
+                                                    device_ids=[local_rank],
+                                                    output_device=[local_rank])
+            self.sim_physics = DistDataParallelWrapper(self.sim_physics,
+                                                       device_ids=[local_rank],
+                                                       output_device=[local_rank])
 
         # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
         if optimizer is None:
@@ -96,7 +102,7 @@ class ParamFitter:
             print(f'{param}, target: {param_val}, init {self.sim_target.get_params([param])}')
             self.sim_target.set_param(param, param_val)
 
-    def fit(self, dataloader, epochs=300, save_freq=5, print_freq=1):
+    def fit(self, dataloader, sampler, epochs=300, save_freq=5, print_freq=1):
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
             if len(self.training_history[param]) == 0:
@@ -105,6 +111,8 @@ class ParamFitter:
         # The training loop
         with tqdm(total=len(dataloader) * epochs) as pbar:
             for epoch in range(epochs):
+                if sampler is not None:
+                    sampler.set_epoch(epoch)
                 for i, selected_tracks_torch in enumerate(dataloader):
                     # Losses for each batch -- used to compute epoch loss
                     losses_batch=[]
@@ -143,7 +151,9 @@ class ParamFitter:
                     if nan_check == 0 and loss !=0 and not loss.isnan():
                         self.optimizer.step()
                         losses_batch.append(loss.item())
-
+                        
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
                     pbar.update(1)
 
                 # Print out params at each epoch

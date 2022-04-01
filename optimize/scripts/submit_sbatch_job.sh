@@ -31,8 +31,8 @@ do
     --node_rank=$node_rank --master_addr=$master_addr \
     optimize/example_run.py \
             --params lifetime \
-            --input_file ${INPUT_FILE} \
-            --batch_sz 1 \
+            --input_file ${INPUT_FILE}\
+            --batch_sz 4 \
             --num_workers 16 &
 
   pids[${node_rank}]=$!

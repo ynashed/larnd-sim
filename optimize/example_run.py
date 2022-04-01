@@ -6,6 +6,7 @@ import sys
 import traceback
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 
 from fit_params import ParamFitter
@@ -13,11 +14,14 @@ from dataio import TracksDataset
 
 def main(config):
     dataset = TracksDataset(filename=config.input_file)
+    sampler = DistributedSampler(dataset, shuffle=True) if dist.is_initialized() else None
     tracks_dataloader = DataLoader(dataset,
-                                  shuffle=True, batch_size=config.batch_sz,
-                                  pin_memory=True, num_workers=config.num_workers)
+                                   shuffle=(sampler is None),
+                                   sampler=sampler, batch_size=config.batch_sz,
+                                   pin_memory=True, num_workers=config.num_workers)
     param_fit = ParamFitter(config.param_list, dataset.get_track_fields(),
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
+                            local_rank=config.local_rank, world_size=config.world_size,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
                             load_checkpoint=config.load_checkpoint, lr=config.lr)
     param_fit.make_target_sim(seed=config.seed)
