@@ -51,18 +51,14 @@ class ParamFitter:
         self.sim_iter.init_params(self.relevant_params_list, history)
         self.sim_iter.track_params(self.relevant_params_list)
         self.sim_iter.to(self.device)
-
-        # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
-        self.sim_physics = SimModule(track_chunk=track_chunk, pixel_chunk=pixel_chunk,
-                                     detector_props=detector_props, pixel_layouts=pixel_layouts)
-        self.sim_physics.to(self.device)
         if world_size > 1:
             self.sim_iter = DistDataParallelWrapper(self.sim_iter,
                                                     device_ids=[local_rank],
                                                     output_device=[local_rank])
-            self.sim_physics = DistDataParallelWrapper(self.sim_physics,
-                                                       device_ids=[local_rank],
-                                                       output_device=[local_rank])
+
+        # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
+        self.sim_physics = SimModule(track_chunk=track_chunk, pixel_chunk=pixel_chunk,
+                                     detector_props=detector_props, pixel_layouts=pixel_layouts)
 
         # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
         if optimizer is None:
@@ -151,7 +147,7 @@ class ParamFitter:
                     if nan_check == 0 and loss !=0 and not loss.isnan():
                         self.optimizer.step()
                         losses_batch.append(loss.item())
-                        
+
                     if torch.cuda.is_available():
                         torch.cuda.synchronize()
                     pbar.update(1)
