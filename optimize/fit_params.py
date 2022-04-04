@@ -173,11 +173,11 @@ class ParamFitter:
                 # Print out params at each epoch
                 if epoch % print_freq == 0:
                     for param in self.relevant_params_list:
-                        print(param, self.sim_physics.get_params([param]).item())
+                        print(param, self.sim_physics.get_params([param])[0].item())
 
                 # Keep track of training history
                 for param in self.relevant_params_list:
-                    self.training_history[param].append(self.sim_iter.get_params([param]).item())
+                    self.training_history[param].append(self.sim_iter.get_params([param])[0].item())
                 if len(losses_batch) > 0:
                     self.training_history['losses'].append(np.mean(losses_batch))
 
