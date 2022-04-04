@@ -33,7 +33,7 @@ class SimModule(nn.Module):
         self.sim_object.track_gradients(params)
         param_tensors = self.get_params(params)
         for i, param in enumerate(param_tensors):
-            self.register_parameter(params[i], self.torch.nn.parameter.Parameter(data=param))
+            self.register_parameter(params[i], torch.nn.parameter.Parameter(data=param))
         self.requires_grad = True
 
     def get_params(self, params):
