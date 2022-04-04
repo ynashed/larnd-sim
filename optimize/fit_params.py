@@ -173,7 +173,7 @@ class ParamFitter:
                 # Print out params at each epoch
                 if epoch % print_freq == 0:
                     for param in self.relevant_params_list:
-                        print(param, self.sim_physics([param]).item())
+                        print(param, self.sim_physics.get_params([param]).item())
 
                 # Keep track of training history
                 for param in self.relevant_params_list:
