@@ -32,7 +32,11 @@ do
     optimize/example_run.py \
             --params lifetime \
             --input_file ${INPUT_FILE}\
-            --batch_sz 4 \
+            --batch_sz 32 \
+            --data_sz 1024 \
+            --track_chunk 4 \
+            --pixel_chunk 4 \
+            --lr 1e-2 \
             --num_workers 16 &
 
   pids[${node_rank}]=$!
