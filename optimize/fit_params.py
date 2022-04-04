@@ -1,3 +1,5 @@
+import os, sys
+import shutil
 import pickle
 import numpy as np
 from utils import get_id_map
@@ -100,6 +102,10 @@ class ParamFitter:
             self.sim_target.set_param(param, param_val)
 
     def fit(self, dataloader, sampler, epochs=300, save_freq=5, print_freq=1):
+        # make a folder for the pixel target
+        if os.path.exists('target'):
+            shutil.rmtree('target', ignore_errors=True)
+        os.makedirs('target')
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
             if len(self.training_history[param]) == 0:
@@ -112,20 +118,29 @@ class ParamFitter:
                     sampler.set_epoch(epoch)
                 if torch.cuda.is_available():
                     torch.cuda.synchronize()
+                # Losses for each batch -- used to compute epoch loss
+                losses_batch=[]
                 for i, selected_tracks_torch in enumerate(dataloader):
-                    # Losses for each batch -- used to compute epoch loss
-                    losses_batch=[]
-
                     # Zero gradients
                     self.optimizer.zero_grad()
 
+                    # Get rid of the extra dimension and padding elements for the loaded data
+                    selected_tracks_torch = torch.flatten(selected_tracks_torch, start_dim=0, end_dim=1)
+                    selected_tracks_torch = selected_tracks_torch[selected_tracks_torch[:, self.track_fields.index("dx")] > 0]
                     event_id_map, unique_eventIDs = get_id_map(selected_tracks_torch, self.track_fields, self.device)
                     selected_tracks_torch = selected_tracks_torch.to(self.device)
 
-                    # Simulate target on the fly -- maybe replace with fixed target
-                    target, pix_target = self.sim_target(selected_tracks_torch, self.track_fields,
-                                                 event_id_map, unique_eventIDs,
-                                                 return_unique_pix=True)
+                    # Simulate target and store them
+                    if epoch == 0:
+                        target, pix_target = self.sim_target(selected_tracks_torch, self.track_fields,
+                                                             event_id_map, unique_eventIDs,
+                                                             return_unique_pix=True)
+                        embed_target = self.sim_target.embed_adc_list(target, pix_target)
+
+                        torch.save(embed_target, 'target/batch' + str(i) + '_target.pt')
+
+                    else:
+                        embed_target = torch.load('target/batch' + str(i) + '_target.pt')
 
                     # Undo normalization (sim -> sim_physics)
                     for param in self.relevant_params_list:
@@ -138,7 +153,6 @@ class ParamFitter:
 
                     # Embed both output and target into "full" image space
                     embed_output = self.sim_physics.embed_adc_list(output, pix_out)
-                    embed_target = self.sim_target.embed_adc_list(target, pix_target)
 
                     # Calc loss between simulated and target + backprop
                     loss = self.loss_fn(embed_output, embed_target)

@@ -132,6 +132,10 @@ class detsim(consts):
     def erf_hack(self, input):
         return ep.astensor(torch.erf(input.raw))
 
+    def sigmoid(self, x):
+        # Using torch here, otherwise we get overflow -- might be able to get around with a trick
+        return ep.astensor(torch.sigmoid(x.raw))
+
     def rho(self, point, q, start, sigmas, segment):
         """
         Function that returns the amount of charge at a certain point in space
@@ -185,16 +189,21 @@ class detsim(consts):
         # Ask about the x_dist, y_dist > pixel_pitch/2 conditions in the original simulation
         return expo
 
-    def truncexpon(self, x, loc=0, scale=1):
+    def truncexpon(self, x, loc=0, scale=1, y_cutoff=-10., rate=100):
         """
         A truncated exponential distribution.
         To shift and/or scale the distribution use the `loc` and `scale` parameters.
         """
         y = (x - loc) / scale
-
-        #Make everything positive and then mask to avoid infs
-        return (ep.exp(-ep.abs(y)) * (y>0)) / scale
-
+         
+        if self.smooth:
+            # Use smoothed mask to make derivatives nicer
+            # y cutoff stops exp from blowing up -- should be far enough away from 0 that sigmoid is small
+            y = ep.maximum(y, y_cutoff)
+            return self.sigmoid(rate*y)*ep.exp(-y) / scale
+        else:
+            # Make everything positive and then mask to avoid nans
+            return (ep.exp(-ep.abs(y)) * (y>0)) / scale
 
     def current_model(self, t, t0, x, y):
         """
@@ -229,7 +238,7 @@ class detsim(consts):
 
         a = ep.minimum(a, 1)
 
-        return a * self.truncexpon(-t, -shifted_t0, b) + (1 - a) * self.truncexpon(-t, -shifted_t0, c)
+        return a * self.truncexpon(-t, -shifted_t0, b) + (1 - a) * self.truncexpon(-t, -shifted_t0, c) 
 
 
     def track_point(self, start, direction, z):
@@ -264,7 +273,7 @@ class detsim(consts):
 
     def calc_total_current(self, x_start, y_start, z_start,
                            z_end, z_start_int, z_end_int, z_poca, 
-                           x_p, y_p, x_step, y_step, borders, direction, sigmas, tracks_ep, start, segment, time_tick):
+                           x_p, y_p, x_step, y_step, borders, direction, sigmas, tracks_ep, start, segment, time_tick, vdrift):
 
         x_start = ep.astensor(x_start)
         y_start = ep.astensor(y_start)
@@ -291,11 +300,10 @@ class detsim(consts):
 
         z_step = (z_end_int - z_start_int) / (z_steps - 1)
 
-
         iz = ep.arange(z_steps, 0, z_steps.max().item())
         z =  z_start_int[:, :, ep.newaxis] + iz[ep.newaxis, ep.newaxis, :] * z_step[..., ep.newaxis]
 
-        t0 = (ep.abs(z - borders[:, 2, 0, ep.newaxis, ep.newaxis]) - 0.5) / self.vdrift
+        t0 = (ep.abs(z - borders[:, 2, 0, ep.newaxis, ep.newaxis]) - 0.5) / vdrift
 
         # FIXME: this sampling is far from ideal, we should sample around the track
         # and not in a cube containing the track
@@ -336,7 +344,7 @@ class detsim(consts):
 
 
         total_current = charge[:, :, ep.newaxis, ...] * current_out * self.e_charge
-
+        
         return total_current.sum(axis=(3, 4, 5)).raw
 
     def tracks_current(self, pixels, tracks, time_max, fields):
@@ -406,30 +414,27 @@ class detsim(consts):
         borders = ep.stack([tpc_borders_ep[x.astype(int)] for x in tracks_ep[:, fields.index("pixel_plane")]])
 
         signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max))
-
         for it in range(0, z_start.shape[0], self.track_chunk):
             it_end = min(it + self.track_chunk, z_start.shape[0])
             for ip in range(0, z_start.shape[1], self.pixel_chunk):
                 ip_end = min(ip + self.pixel_chunk, z_start.shape[1])
                 if tracks_ep.raw.grad_fn is not None:
                     # Torch checkpointing needs torch tensors for both input and output
-                    current_sum  = checkpoint.checkpoint(self.calc_total_current, 
+                    current_sum = checkpoint.checkpoint(self.calc_total_current, 
                                                      *(x_start[it:it_end, ip:ip_end].raw, y_start[it:it_end, ip:ip_end].raw, z_start.raw, 
                                                        z_end.raw, z_start_int[it:it_end, ip:ip_end].raw, z_end_int[it:it_end, ip:ip_end].raw, z_poca[it:it_end, ip:ip_end].raw, 
                                                        x_p[it:it_end, ip:ip_end].raw, y_p[it:it_end, ip:ip_end].raw, x_step[it:it_end, ip:ip_end].raw, y_step[it:it_end, ip:ip_end].raw, borders[it:it_end].raw, direction[it:it_end].raw, 
                                                        sigmas[it:it_end].raw,
-                                                       tracks_ep[it:it_end, fields.index("n_electrons")].raw, start[it:it_end].raw, segment[it:it_end].raw, time_tick[it:it_end].raw))
+                                                       tracks_ep[it:it_end, fields.index("n_electrons")].raw, start[it:it_end].raw, segment[it:it_end].raw, time_tick[it:it_end].raw, self.vdrift))
                 else:
-                    current_sum  = self.calc_total_current( 
+                    current_sum = self.calc_total_current( 
                                                        x_start[it:it_end, ip:ip_end].raw, y_start[it:it_end, ip:ip_end].raw, z_start.raw,
                                                        z_end.raw, z_start_int[it:it_end, ip:ip_end].raw, z_end_int[it:it_end, ip:ip_end].raw, z_poca[it:it_end, ip:ip_end].raw,
                                                        x_p[it:it_end, ip:ip_end].raw, y_p[it:it_end, ip:ip_end].raw, x_step[it:it_end, ip:ip_end].raw, y_step[it:it_end, ip:ip_end].raw, borders[it:it_end].raw, direction[it:it_end].raw,
                                                        sigmas[it:it_end].raw,
-                                                       tracks_ep[it:it_end, fields.index("n_electrons")].raw, start[it:it_end].raw, segment[it:it_end].raw, time_tick[it:it_end].raw)
+                                                       tracks_ep[it:it_end, fields.index("n_electrons")].raw, start[it:it_end].raw, segment[it:it_end].raw, time_tick[it:it_end].raw, self.vdrift)
  
-
                 signals = ep.index_update(signals, ep.index[it:it_end, ip:ip_end, :], ep.astensor(current_sum))
-
         return signals.raw
 
 
