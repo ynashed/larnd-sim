@@ -28,6 +28,7 @@ class ParamFitter:
             # torch.set_default_tensor_type('torch.cuda.FloatTensor')
         else:
             self.device = 'cpu'
+        self.local_rank = local_rank
         self.track_fields = track_fields
         if type(relevant_params) == dict:
             self.relevant_params_list = list(relevant_params.keys())
@@ -103,9 +104,9 @@ class ParamFitter:
 
     def fit(self, dataloader, sampler, epochs=300, save_freq=5, print_freq=1):
         # make a folder for the pixel target
-        if os.path.exists('target'):
-            shutil.rmtree('target', ignore_errors=True)
-        os.makedirs('target')
+        if os.path.exists(f'target{self.local_rank}'):
+            shutil.rmtree(f'target{self.local_rank}', ignore_errors=True)
+        os.makedirs(f'target{self.local_rank}')
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
             if len(self.training_history[param]) == 0:
@@ -137,10 +138,10 @@ class ParamFitter:
                                                              return_unique_pix=True)
                         embed_target = self.sim_target.embed_adc_list(target, pix_target)
 
-                        torch.save(embed_target, 'target/batch' + str(i) + '_target.pt')
+                        torch.save(embed_target, f'target{self.local_rank}/batch{i}_target.pt')
 
                     else:
-                        embed_target = torch.load('target/batch' + str(i) + '_target.pt')
+                        embed_target = torch.load(f'target{self.local_rank}/batch{i}_target.pt')
 
                     # Undo normalization (sim -> sim_physics)
                     for param in self.relevant_params_list:
