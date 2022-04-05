@@ -30,12 +30,13 @@ do
     --nproc_per_node=$nproc_per_node --nnodes=$SLURM_JOB_NUM_NODES \
     --node_rank=$node_rank --master_addr=$master_addr \
     optimize/example_run.py \
+            --job_id ${SLURM_JOBID} \
             --params lifetime \
             --input_file ${INPUT_FILE}\
-            --batch_sz 32 \
+            --batch_sz 8 \
             --data_sz 1024 \
-            --track_chunk 4 \
-            --pixel_chunk 4 \
+            --track_chunk 1 \
+            --pixel_chunk 1 \
             --lr 1e-2 \
             --num_workers 16 &
 

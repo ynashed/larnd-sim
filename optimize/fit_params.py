@@ -19,7 +19,8 @@ class DistDataParallelWrapper(DistributedDataParallel):
 
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
-                 detector_props, pixel_layouts, local_rank=0, world_size=1,
+                 detector_props, pixel_layouts, job_id,
+                 local_rank=0, world_rank=0, world_size=1,
                  load_checkpoint = None, lr=None, optimizer=None, loss_fn=None):
 
         # If you have access to a GPU, sim works trivially/is much faster
@@ -28,7 +29,8 @@ class ParamFitter:
             # torch.set_default_tensor_type('torch.cuda.FloatTensor')
         else:
             self.device = 'cpu'
-        self.local_rank = local_rank
+        self.job_id = job_id
+        self.world_rank = world_rank
         self.track_fields = track_fields
         if type(relevant_params) == dict:
             self.relevant_params_list = list(relevant_params.keys())
@@ -104,9 +106,9 @@ class ParamFitter:
 
     def fit(self, dataloader, sampler, epochs=300, save_freq=5, print_freq=1):
         # make a folder for the pixel target
-        if os.path.exists(f'target{self.local_rank}'):
-            shutil.rmtree(f'target{self.local_rank}', ignore_errors=True)
-        os.makedirs(f'target{self.local_rank}')
+        if os.path.exists(f'target_{self.job_id}_{self.world_rank}'):
+            shutil.rmtree(f'target_{self.job_id}_{self.world_rank}', ignore_errors=True)
+        os.makedirs(f'target_{self.job_id}_{self.world_rank}')
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
             if len(self.training_history[param]) == 0:
@@ -138,10 +140,10 @@ class ParamFitter:
                                                              return_unique_pix=True)
                         embed_target = self.sim_target.embed_adc_list(target, pix_target)
 
-                        torch.save(embed_target, f'target{self.local_rank}/batch{i}_target.pt')
+                        torch.save(embed_target, f'target_{self.job_id}_{self.world_rank}/batch{i}_target.pt')
 
                     else:
-                        embed_target = torch.load(f'target{self.local_rank}/batch{i}_target.pt')
+                        embed_target = torch.load(f'target_{self.job_id}_{self.world_rank}/batch{i}_target.pt')
 
                     # Undo normalization (sim -> sim_physics)
                     for param in self.relevant_params_list:
@@ -184,5 +186,5 @@ class ParamFitter:
                 # Save history in pkl files
                 n_steps = len(self.training_history[param])
                 if n_steps % save_freq == 0:
-                    with open(f'history_epoch{n_steps}.pkl', "wb") as f_history:
+                    with open(f'history_{self.job_id}_rank{self.world_rank}_epoch{n_steps}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)

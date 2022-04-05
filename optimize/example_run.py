@@ -20,8 +20,8 @@ def main(config):
                                    sampler=sampler, batch_size=config.batch_sz,
                                    pin_memory=True, num_workers=config.num_workers)
     param_fit = ParamFitter(config.param_list, dataset.get_track_fields(),
-                            track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
-                            local_rank=config.local_rank, world_size=config.world_size,
+                            track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk, job_id=config.job_id,
+                            local_rank=config.local_rank, world_rank=config.world_rank, world_size=config.world_size,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
                             load_checkpoint=config.load_checkpoint, lr=config.lr)
     param_fit.make_target_sim(seed=config.seed)
@@ -61,6 +61,7 @@ if __name__ == '__main__':
     parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
                         help="data size for fitting (number of tracks)")
     parser.add_argument("--local_rank", default=0, type=int)
+    parser.add_argument('--job_id', type=str, default='000')
 
     try:
         args = parser.parse_args()
