@@ -13,8 +13,8 @@ def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
 class TracksDataset(Dataset):
-    def __init__(self, filename, ntrack, swap_xz=True):
-
+    def __init__(self, filename, ntrack, swap_xz=True, seed=2):
+        np.random.seed(seed)
         with h5py.File(filename, 'r') as f:
             tracks = np.array(f['segments'])
 

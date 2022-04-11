@@ -13,7 +13,7 @@ from fit_params import ParamFitter
 from dataio import TracksDataset
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz)
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.seed)
     sampler = DistributedSampler(dataset, shuffle=True) if dist.is_initialized() else None
     tracks_dataloader = DataLoader(dataset,
                                    shuffle=(sampler is None),
@@ -25,6 +25,7 @@ def main(config):
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
                             load_checkpoint=config.load_checkpoint, lr=config.lr)
     param_fit.make_target_sim(seed=config.seed)
+    torch.manual_seed(config.seed)
     param_fit.fit(tracks_dataloader, sampler, epochs=config.epochs)
 
     return 0, 'Fitting successful'
