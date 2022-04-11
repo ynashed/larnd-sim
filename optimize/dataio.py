@@ -14,7 +14,7 @@ def structured_from_torch(tracks_torch, dtype):
 
 class TracksDataset(Dataset):
     def __init__(self, filename, ntrack, swap_xz=True, seed=2):
-        np.random.seed(seed)
+        random.seed(seed)
         with h5py.File(filename, 'r') as f:
             tracks = np.array(f['segments'])
 
