@@ -84,6 +84,8 @@ class ParamFitter:
             self.training_history = {}
             for param in self.relevant_params_list:
                 self.training_history[param] = []
+                self.training_history[param + '_target'] = []
+                self.training_history[param + '_lr'] = [lr]
             self.training_history['losses'] = []
 
 
@@ -97,7 +99,7 @@ class ParamFitter:
             print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
             setattr(self.sim_target, param, param_val)
 
-    def fit(self, dataloader, epochs=300, save_freq=5, print_freq=1):
+    def fit(self, dataloader, epochs=300, save_freq=1, print_freq=1):
         # make a folder for the pixel target
         if os.path.exists('target'):
             shutil.rmtree('target', ignore_errors=True)
@@ -106,8 +108,8 @@ class ParamFitter:
 
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
-            if len(self.training_history[param]) == 0:
-                self.training_history[param].append(getattr(self.sim_iter, param).item())
+            if len(self.training_history[param + '_target']) == 0:
+                self.training_history[param + '_target'].append(getattr(self.sim_iter, param).item())
 
         # The training loop
         with tqdm(total=len(dataloader) * epochs) as pbar:
@@ -156,7 +158,7 @@ class ParamFitter:
 
                     # To be investigated -- sometimes we get nans. Avoid doing a step if so
                     nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
-                    if nan_check == 0 and loss !=0 and not loss.isnan():
+                    if nan_check == 0 and not loss.isnan():
                         self.optimizer.step()
                         losses_batch.append(loss.item())
 
@@ -178,3 +180,5 @@ class ParamFitter:
                 if n_steps % save_freq == 0:
                     with open(f'history_epoch{n_steps}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)
+                    if os.path.exists(f'history_epoch{n_steps-save_freq}.pkl'):
+                        os.remove(f'history_epoch{n_steps-save_freq}.pkl')
