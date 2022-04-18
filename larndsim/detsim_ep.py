@@ -10,6 +10,7 @@ from torch.utils import checkpoint
 
 from .consts_ep import consts
 from .fee_ep import fee
+from .utils import diff_arange
 
 import logging
 
@@ -52,7 +53,7 @@ class detsim(consts):
         t_length = t_end - t_start
         track_starts = (t_start + event_id_map_ep * self.time_interval[1] * 3).raw
 
-        time_max = (ep.max(t_length / self.t_sampling + 1)).astype(int)
+        time_max = (ep.max(t_length / self.t_sampling + 1))
         return track_starts, time_max.raw
 
 
@@ -337,6 +338,8 @@ class detsim(consts):
         # mask y elements
         charge *= (y_dist < self.pixel_pitch / 2)[:, :, ep.newaxis, :, ep.newaxis]
 
+        x_dist = ep.minimum(x_dist, self.pixel_pitch / 2)
+        y_dist = ep.minimum(y_dist, self.pixel_pitch / 2)
         current_out = self.current_model(time_tick[:, ep.newaxis, :, ep.newaxis, ep.newaxis, ep.newaxis],
                                          t0[:, :, ep.newaxis, ep.newaxis, ep.newaxis, :],
                                          x_dist[:, :, ep.newaxis, :, ep.newaxis, ep.newaxis],
@@ -365,7 +368,9 @@ class detsim(consts):
         """
         pixels = ep.astensor(pixels)
         tracks_ep = ep.astensor(tracks)
-        it = ep.arange(pixels, 0, time_max)
+        # Need to use worst case scenario -- variable length messes with gradients
+        time_max = ep.astensor(torch.tensor(len(self.time_ticks)*1.))#ep.astensor(time_max)
+        it = diff_arange(0, time_max)
 
         # Pixel coordinates
         x_p, y_p = self.get_pixel_coordinates(pixels)
@@ -413,7 +418,8 @@ class detsim(consts):
         tpc_borders_ep = ep.from_numpy(pixels, self.tpc_borders).float32()
         borders = ep.stack([tpc_borders_ep[x.astype(int)] for x in tracks_ep[:, fields.index("pixel_plane")]])
 
-        signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max))
+        signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max.astype(int).item()))
+        extras = []
         for it in range(0, z_start.shape[0], self.track_chunk):
             it_end = min(it + self.track_chunk, z_start.shape[0])
             for ip in range(0, z_start.shape[1], self.pixel_chunk):
@@ -435,6 +441,7 @@ class detsim(consts):
                                                        tracks_ep[it:it_end, fields.index("n_electrons")].raw, start[it:it_end].raw, segment[it:it_end].raw, time_tick[it:it_end].raw, self.vdrift)
  
                 signals = ep.index_update(signals, ep.index[it:it_end, ip:ip_end, :], ep.astensor(current_sum))
+        
         return signals.raw
 
 
@@ -463,9 +470,9 @@ class detsim(consts):
         index = index_map[..., ep.newaxis]
 
         # Set up time map to match with signal shape. To implement: ep.round
-        itime = ((track_starts / self.t_sampling + 0.5).astype(int)[:, ep.newaxis, ep.newaxis] +
+        itime = ((track_starts / self.t_sampling + 0.5)[:, ep.newaxis, ep.newaxis] +
                  ep.arange(signals, 0, signals.shape[2])[ep.newaxis, ep.newaxis, :])
-
+ 
         # Each signal index now has a corresponding pixel/time index
         exp_index = ep.tile(index, (1,1,signals.shape[2]))
         exp_itime = ep.tile(itime, (1, signals.shape[1], 1))
@@ -475,11 +482,10 @@ class detsim(consts):
         flat_idxs = idxs.reshape((-1, 3))
 
         # Get unique indices (return_inverse doesn't exist for ep)
-        unique_idxs, idx_inv = flat_idxs[:, :2].raw.unique(dim=0, return_inverse=True)
+        unique_idxs, idx_inv = flat_idxs[:, :2].astype(int).raw.unique(dim=0, return_inverse=True)
 
         unique_idxs = ep.astensor(unique_idxs)
         idx_inv = ep.astensor(idx_inv)
-
         # Sum over values for unique indices - scatter_add_ doesn't exist in ep. Can loop, but slow, e.g.
         #out = ep.zeros(signals, shape=(len(unique_idxs)))
         #for i in range(flat_idxs.shape[0]):
