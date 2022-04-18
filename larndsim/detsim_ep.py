@@ -368,8 +368,8 @@ class detsim(consts):
         """
         pixels = ep.astensor(pixels)
         tracks_ep = ep.astensor(tracks)
-        # Need to use worst case scenario -- variable length messes with gradients
-        time_max = ep.astensor(torch.tensor(len(self.time_ticks)*1.))#ep.astensor(time_max)
+        # Need to trunc, otherwise gradients get funky
+        time_max = ep.astensor(torch.trunc(time_max))
         it = diff_arange(0, time_max)
 
         # Pixel coordinates
