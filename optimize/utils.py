@@ -117,6 +117,57 @@ def embed_adc_list(sim, adc_list, unique_pix, ticks_list):
 
     return new_list
 
+# Idea for sparse loss -- compare only non-zero values of guess and target
+# Comparison gets min L2 distance on (x,y,t,q) across points in guess for each 
+# target point (best match), then takes the mean across target points for the loss.
+# If guess == target, min L2 is 0 for all, so loss is 0
+def calc_loss(sim, sim_target, 
+              target, pix_targ, ticks_list_targ,
+              output, pix_out, ticks_list_out, return_components = False):
+ 
+    # Set up nonzero tensors for target
+    zero_val = sim_target.digitize(torch.tensor(0.))
+    mask_targ = (target > zero_val)
+    target_nz = target[mask_targ]
+    exp_pix_targ = torch.tile(pix_targ[:, :, None], (1, 1, sim_target.MAX_ADC_VALUES))
+    pix_targ_nz_x = exp_pix_targ[:, 0][mask_targ]
+    pix_targ_nz_y = exp_pix_targ[:, 1][mask_targ]
+    ticks_list_targ_nz =  ticks_list_targ[mask_targ]
+
+    # Set up nonzero tensors for guess
+    zero_val = sim.digitize(torch.tensor(0.))
+    mask_out = (output > zero_val)
+    output_nz = output[mask_out]
+    exp_pix_out = torch.tile(pix_out[:, :, None], (1, 1, sim.MAX_ADC_VALUES))
+    pix_out_nz_x = exp_pix_out[:, 0][mask_out]
+    pix_out_nz_y = exp_pix_out[:, 1][mask_out]
+    ticks_list_out_nz =  ticks_list_out[mask_out]
+
+    # Indices for all pairs
+    I, J = torch.meshgrid(torch.arange(len(ticks_list_targ_nz)), 
+                          torch.arange(len(ticks_list_out_nz)))
+    
+    # Normalize by mean values to avoid dimension imbalance
+    norm_x = (pix_targ_nz_x + pix_out_nz_x).mean()
+    norm_y = (pix_targ_nz_y + pix_out_nz_y).mean()
+    norm_ticks = (ticks_list_targ_nz + ticks_list_out_nz).mean()
+    norm_adc = (target_nz + output_nz).mean()
+    
+    # Individual component losses
+    pix_loss_x = ((pix_targ_nz_x[I] - pix_out_nz_x[J]) / norm_x)**2
+    pix_loss_y = ((pix_targ_nz_y[I] - pix_out_nz_y[J]) / norm_y)**2
+    ticks_loss = ((ticks_list_targ_nz[I] - ticks_list_out_nz[J]) / norm_ticks)**2
+    adc_loss = ((target_nz[I]-output_nz[J]) / norm_adc)**2
+  
+    # Can return separate components for debugging, otherwise return loss as discussed above
+    if return_components:
+        return (torch.mean(torch.min(pix_loss_x, dim=1).values), 
+                torch.mean(torch.min(pix_loss_y, dim=1).values), 
+                torch.mean(torch.min(ticks_loss, dim=1).values), 
+                torch.mean(torch.min(adc_loss, dim=1).values))
+    else:
+        return torch.mean(torch.min(pix_loss_x + pix_loss_y + ticks_loss + adc_loss, dim=1).values)
+
 def param_l2_reg(param, sim):
     sigma = (ranges[param]['up'] - ranges[param]['down'])/2.
     return ((ranges[param]['nom']-getattr(sim, param))**2)/(sigma**2)
