@@ -26,8 +26,9 @@ class SimModule(nn.Module):
         for param in params:
             if history is not None:
                 self.set_param(param, history[param][-1])
-            else:
-                self.set_param(param, getattr(self.sim_object, param)/ranges[param]['nom'])
+            # TODO: Implement better approach for normalization. Removed for now.
+            # else:
+            #     self.set_param(param, getattr(self.sim_object, param)/ranges[param]['nom'])
 
     def track_params(self, params):
         self.sim_object.track_gradients(params)

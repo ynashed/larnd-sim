@@ -62,10 +62,6 @@ class ParamFitter:
                                                     device_ids=[local_rank],
                                                     output_device=[local_rank])
 
-        # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
-        self.sim_physics = SimModule(track_chunk=track_chunk, pixel_chunk=pixel_chunk,
-                                     detector_props=detector_props, pixel_layouts=pixel_layouts)
-
         # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
         if optimizer is None:
             if self.relevant_params_dict is None:
@@ -145,17 +141,14 @@ class ParamFitter:
                     else:
                         embed_target = torch.load(f'target_{self.job_id}_{self.world_rank}/batch{i}_target.pt')
 
-                    # Undo normalization (sim -> sim_physics)
-                    for param in self.relevant_params_list:
-                        self.sim_physics.set_param(param, self.sim_iter.get_params([param])[0]*ranges[param]['nom'])
 
                     # Simulate and get output
-                    output, pix_out = self.sim_physics(selected_tracks_torch, self.track_fields,
+                    output, pix_out = self.sim_iter(selected_tracks_torch, self.track_fields,
                                               event_id_map, unique_eventIDs,
                                               return_unique_pix=True)
 
                     # Embed both output and target into "full" image space
-                    embed_output = self.sim_physics.embed_adc_list(output, pix_out)
+                    embed_output = self.sim_iter.embed_adc_list(output, pix_out)
 
                     # Calc loss between simulated and target + backprop
                     loss = self.loss_fn(embed_output, embed_target)
@@ -175,7 +168,7 @@ class ParamFitter:
                 # Print out params at each epoch
                 if epoch % print_freq == 0:
                     for param in self.relevant_params_list:
-                        print(param, self.sim_physics.get_params([param])[0].item())
+                        print(param, self.sim_iter.get_params([param])[0].item())
 
                 # Keep track of training history
                 for param in self.relevant_params_list:
