@@ -4,7 +4,7 @@ sys.path.insert(0, larndsim_dir)
 import shutil
 import pickle
 import numpy as np
-from .utils import get_id_map, all_sim, embed_adc_list
+from .utils import get_id_map, all_sim, embed_adc_list, calc_loss
 from .ranges import ranges
 from larndsim.sim_with_grad import sim_with_grad
 import torch
@@ -72,9 +72,9 @@ class ParamFitter:
         else:
             self.optimizer = optimizer
 
-        # Set up loss function -- can pass in directly, or MSE by default
+        # Set up loss function -- can pass in directly, or sparse diff by default
         if loss_fn is None:
-            self.loss_fn = torch.nn.MSELoss()
+            self.loss_fn = calc_loss
         else:
             self.loss_fn = loss_fn
 
@@ -128,10 +128,10 @@ class ParamFitter:
                     # Simulate target and store them
                     if epoch == 0:
                         
-                        target, pix_target = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                        target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
                                                     event_id_map, unique_eventIDs,
                                                     return_unique_pix=True)
-                        embed_target = embed_adc_list(self.sim_target, target, pix_target)
+                        embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
 
                         torch.save(embed_target, 'target/batch' + str(i) + '_target.pt')
 
@@ -141,14 +141,15 @@ class ParamFitter:
                     # Undo normalization (sim -> sim_physics)
                     for param in self.relevant_params_list:
                         setattr(self.sim_physics, param, getattr(self.sim_iter, param)*ranges[param]['nom'])
+                        print(param, getattr(self.sim_physics, param))
 
                     # Simulate and get output
-                    output, pix_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
+                    output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
                                               event_id_map, unique_eventIDs,
                                               return_unique_pix=True)
 
                     # Embed both output and target into "full" image space
-                    embed_output = embed_adc_list(self.sim_physics, output, pix_out)
+                    embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
 
                     # Calc loss between simulated and target + backprop
                     loss = self.loss_fn(embed_output, embed_target)
