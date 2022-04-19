@@ -79,6 +79,7 @@ if __name__ == '__main__':
                                     init_method='env://')
             args_dict['world_rank'] = dist.get_rank()
             args_dict['global_batch_size'] = args.batch_sz
+            args_dict['lr'] = args_dict.lr / args.world_size
             args_dict['batch_sz'] = int(args.batch_sz // args.world_size)
         retval, status_message = main(args)
     except Exception as e:
