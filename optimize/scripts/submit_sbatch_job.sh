@@ -3,7 +3,7 @@
 #SBATCH --job-name=larndsim-fit
 #SBATCH --output=output-%j.txt --error=output-%j.txt
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-task=4
+#SBATCH --gpus-per-node=a100:4
 #SBATCH --cpus-per-task=64
 
 INPUT_FILE=/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5
