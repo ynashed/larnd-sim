@@ -14,7 +14,7 @@ from tqdm import tqdm
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
-                 lr=None, optimizer=None, loss_fn=None):
+                 lr=None, optimizer=None, loss_fn=None, readout_noise=True):
 
         # If you have access to a GPU, sim works trivially/is much faster
         if torch.cuda.is_available():
@@ -38,11 +38,11 @@ class ParamFitter:
             is_continue = True
 
         # Simulation object for target
-        self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk)
+        self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise)
         self.sim_target.load_detector_properties(detector_props, pixel_layouts)
 
         # Simulation object for iteration -- this is where gradient updates will happen
-        self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk)
+        self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise)
         self.sim_iter.load_detector_properties(detector_props, pixel_layouts)
 
         # Normalize parameters to init at 1, or set to checkpointed values
@@ -56,7 +56,7 @@ class ParamFitter:
         self.sim_iter.track_gradients(self.relevant_params_list)
 
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
-        self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk)
+        self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise)
         self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
 
         # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr

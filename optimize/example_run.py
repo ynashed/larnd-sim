@@ -17,7 +17,7 @@ def main(config):
     param_fit = ParamFitter(config.param_list, dataset.get_track_fields(),
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
-                            load_checkpoint=config.load_checkpoint, lr=config.lr)
+                            load_checkpoint=config.load_checkpoint, lr=config.lr, readout_noise=(not config.no_noise))
     param_fit.make_target_sim(seed=config.seed)
     param_fit.fit(tracks_dataloader, epochs=config.epochs)
 
@@ -54,6 +54,8 @@ if __name__ == '__main__':
                         help="Random seed for target construction")
     parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
                         help="data size for fitting (number of tracks)")
+    parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
+                        help="Flag to turn off readout noise")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
