@@ -40,7 +40,7 @@ def test_forward():
     outputs = calc_forward()
     if os.path.exists(output_path):
         check = torch.load(output_path)
-        torch.save('tests/output/forward-test-output.pth', check)
+        torch.save(outputs, 'tests/output/forward-test-output.pth')
         assert torch.allclose(outputs, check), f'Forward model output differs! Max diff: {abs(outputs-check).max()}'
     else:
         print("Saving new comparison file")
