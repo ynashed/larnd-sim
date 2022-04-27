@@ -122,10 +122,10 @@ def calc_loss(embed_out, embed_targ, return_components = False):
                           torch.arange(len(ticks_list_out_nz)))
     
     # Normalize by mean values to avoid dimension imbalance
-    norm_x = (pix_targ_nz_x.mean() + pix_out_nz_x.mean()) / 2.
-    norm_y = (pix_targ_nz_y.mean() + pix_out_nz_y.mean()) / 2.
-    norm_ticks = (ticks_list_targ_nz.mean() + ticks_list_out_nz.mean()) / 2.
-    norm_adc = (adc_targ_nz.mean() + adc_out_nz.mean()) / 2.
+    norm_x = ((pix_targ_nz_x.mean() + pix_out_nz_x.mean()) / 2.)**2
+    norm_y = ((pix_targ_nz_y.mean() + pix_out_nz_y.mean()) / 2.)**2
+    norm_ticks = ((ticks_list_targ_nz.mean() + ticks_list_out_nz.mean()) / 2.)**2
+    norm_adc = ((adc_targ_nz.mean() + adc_out_nz.mean()) / 2.)**2
     
     # Individual component losses (z included to help point matching)
     pix_loss_x = (pix_targ_nz_x[I] - pix_out_nz_x[J])**2
