@@ -85,7 +85,7 @@ jobs:
           pytest tests/testQuenching.py
           pytest tests/testTrackCharge.py
 
-  test diffsim:
+  test-diffsim:
     # Steps represent a sequence of tasks that will be executed as part of the job
     runs-on: ubuntu-latest
     container: slaclab/larndsim:latest
