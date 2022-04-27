@@ -11,7 +11,7 @@ from .consts_ep import consts
 
 
 class fee(consts):
-    def __init__(self):
+    def __init__(self, readout_noise):
         consts.__init__(self)
 
         #: Maximum number of ADC values stored per pixel
@@ -32,10 +32,14 @@ class fee(consts):
         self.V_PEDESTAL = 580
         #: Number of ADC counts
         self.ADC_COUNTS = 2**8
-        #: Reset noise in e-
-        self.RESET_NOISE_CHARGE = 900
-        #: Uncorrelated noise in e-
-        self.UNCORRELATED_NOISE_CHARGE = 500
+        if readout_noise:
+            #: Reset noise in e-
+            self.RESET_NOISE_CHARGE = 900
+            #: Uncorrelated noise in e-
+            self.UNCORRELATED_NOISE_CHARGE = 500
+        else:
+            self.RESET_NOISE_CHARGE = 0
+            self.UNCORRELATED_NOISE_CHARGE = 0
 
     def digitize(self, integral_list):
         """
