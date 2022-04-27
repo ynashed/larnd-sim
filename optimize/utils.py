@@ -52,7 +52,7 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
                                           fields=fields)
 
     unique_pix_torch = torch.empty((0, 2), device=neighboring_pixels_torch.device)
-    pixels_signals_torch = torch.zeros((len(unique_pix_torch), len(sim.time_ticks)*50),
+    pixels_signals_torch = torch.zeros((len(unique_pix_torch), len(sim.time_ticks)*3),
                                        device=unique_pix_torch.device, dtype=selected_tracks.dtype)
 
     shapes_torch = neighboring_pixels_torch.shape
@@ -62,7 +62,7 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
     this_unique_pix_torch = this_unique_pix_torch[(this_unique_pix_torch[:,0] != -1) & (this_unique_pix_torch[:,1] != -1),:]
     unique_pix_torch = torch.cat((unique_pix_torch, this_unique_pix_torch),dim=0)
 
-    this_pixels_signals_torch = torch.zeros((len(this_unique_pix_torch), len(sim.time_ticks)*50),
+    this_pixels_signals_torch = torch.zeros((len(this_unique_pix_torch), len(sim.time_ticks)*3),
                                             device=unique_pix_torch.device)
     pixels_signals_torch = torch.cat((pixels_signals_torch, this_pixels_signals_torch), dim=0)
 
@@ -98,7 +98,7 @@ def update_grad_param(sim, name, value):
 # ADC counts given as list of pixels. Better for loss to embed this in the "full" pixel space
 def embed_adc_list(sim, adc_list, unique_pix):
     zero_val = sim.digitize(torch.tensor(0)).item()
-    new_list = torch.ones((sim.n_pixels[0], sim.n_pixels[1], adc_list.shape[1]), device=unique_pix.device)*zero_val
+    new_list = torch.ones((sim.n_pixels[0], sim.n_pixels[1], adc_list.shape[1]), device=unique_pix.device, dtype=adc_list.dtype)*zero_val
 
     plane_id = unique_pix[..., 0] // sim.n_pixels[0]
     unique_pix[..., 0] = unique_pix[..., 0] - sim.n_pixels[0] * plane_id

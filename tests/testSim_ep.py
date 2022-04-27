@@ -28,7 +28,7 @@ def calc_forward():
     event_id_map, unique_eventIDs = get_id_map(selected_tracks_torch, track_fields, device)
     selected_tracks_torch = selected_tracks_torch.to(device)
 
-    target, pix_target = all_sim(sim_target, selected_tracks_torch, track_fields,
+    target, pix_target = all_sim(sim_target, selected_tracks_torch.double(), track_fields,
                                  event_id_map, unique_eventIDs,
                                  return_unique_pix=True)
     embed_target = embed_adc_list(sim_target, target, pix_target)
@@ -40,6 +40,7 @@ def test_forward():
     outputs = calc_forward()
     if os.path.exists(output_path):
         check = torch.load(output_path)
+        torch.save('tests/output/forward-test-output.pth', check)
         assert torch.allclose(outputs, check), f'Forward model output differs! Max diff: {abs(outputs-check).max()}'
     else:
         print("Saving new comparison file")
