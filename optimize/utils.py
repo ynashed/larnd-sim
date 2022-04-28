@@ -126,18 +126,18 @@ def calc_loss(embed_out, embed_targ, return_components = False):
     norm_y = ((pix_targ_nz_y.mean() + pix_out_nz_y.mean()) / 2.)**2
     norm_ticks = ((ticks_list_targ_nz.mean() + ticks_list_out_nz.mean()) / 2.)**2
     norm_adc = ((adc_targ_nz.mean() + adc_out_nz.mean()) / 2.)**2
-    
+
     # Individual component losses (z included to help point matching)
     pix_loss_x = (pix_targ_nz_x[I] - pix_out_nz_x[J])**2
     pix_loss_y = (pix_targ_nz_y[I] - pix_out_nz_y[J])**2
     ticks_loss = (ticks_list_targ_nz[I] - ticks_list_out_nz[J])**2
     z_loss = (z_targ_nz[I] - z_out_nz[J])**2
     adc_loss = (adc_targ_nz[I]-adc_out_nz[J])**2
-  
-    # Spatially match pairs
-    space_match_idxs = torch.argmin(pix_loss_x + pix_loss_y + z_loss, dim=1)
-    min_idxs = (torch.arange(pix_loss_x.shape[0]), space_match_idxs)
 
+    # Spatially match pairs
+    space_match_idxs = torch.argmin(pix_loss_x + pix_loss_y + z_loss, dim=0)
+    #min_idxs = (torch.arange(pix_loss_x.shape[1]), space_match_idxs)
+    min_idxs = (space_match_idxs, torch.arange(pix_loss_x.shape[1]))
     # Can return separate components for debugging, otherwise return loss as discussed above
     if return_components:
         return (pix_loss_x, 
