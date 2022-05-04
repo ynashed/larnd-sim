@@ -85,7 +85,7 @@ jobs:
           pytest tests/testQuenching.py
           pytest tests/testTrackCharge.py
 
-  test-diffsim:
+  test-forward:
     # Steps represent a sequence of tasks that will be executed as part of the job
     runs-on: ubuntu-latest
     container: slaclab/larndsim:latest
@@ -95,10 +95,28 @@ jobs:
       - uses: actions/checkout@v2
       - name: Check forward
         run: |
-          pytest tests/testSim_ep.py
+          pytest tests/test_forward.py
 
       - name: Archive test output
         uses: actions/upload-artifact@v2
         with:
           name: forward-test-output
           path: tests/output/forward-test-output.pth 
+
+  test-backward:
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    runs-on: ubuntu-latest
+    container: slaclab/larndsim:latest
+
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v2
+      - name: Check backward
+        run: |
+          pytest tests/test_backward.py
+
+      - name: Archive test output
+        uses: actions/upload-artifact@v2
+        with:
+          name: backward-test-output
+          path: tests/output/backward-test-output.pkl
