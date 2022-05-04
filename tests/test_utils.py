@@ -11,7 +11,7 @@ import torch
 
 def calc_forward(with_grad=False, param_list=[], shift=0.05, device='cpu'):
     track_chunk = 1
-    pixel_chunk = 2
+    pixel_chunk = 1
     detector_props = "larndsim/detector_properties/module0.yaml"
     pixel_layouts = "larndsim/pixel_layouts/multi_tile_layout-2.2.16.yaml"
     input_file =  "tests/data/test_inputs.h5"
