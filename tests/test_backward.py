@@ -35,12 +35,13 @@ def test_backward():
     for param in param_list:
         recording[f'{param}_grad'] = getattr(sim, param).grad.item()
 
+    with open('tests/output/backward-test-output.pkl', 'wb') as f:
+        pickle.dump(recording, f)
+
     if os.path.exists(param_path):
         check_params = pickle.load(open(param_path, "rb"))
         for key in check_params.keys():
             assert torch.allclose(torch.tensor(check_params[key]), torch.tensor(recording[key])), f'{key} differs! Diff: {abs(check_params[key]-recording[key])}'
-        with open('tests/output/backward-test-output.pkl', 'wb') as f:
-            pickle.dump(recording, f)
     else:
         print("Saving new comparison file")
         with open(param_path, 'wb') as f:

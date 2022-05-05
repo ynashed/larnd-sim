@@ -40,11 +40,8 @@ class TracksDataset(Dataset):
             track_set = np.unique(tracks[tracks['eventID'] == ev]['trackID'])
             for trk in track_set:
                 trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
-                #TODO once we enter the end game, this track selection requirement needs to be more accessible. 
-                # For now, we keep it as it is to take consistent data among developers
-                if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > 30:
-                    index.append([ev, trk])
-                    all_tracks.append(torch_from_structured(tracks[trk_msk]))
+                index.append([ev, trk])
+                all_tracks.append(torch_from_structured(tracks[trk_msk]))
 
         # all fit with a sub-set of tracks
         fit_index = []
