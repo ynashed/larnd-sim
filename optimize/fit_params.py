@@ -152,7 +152,7 @@ class ParamFitter:
                     embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
 
                     # Calc loss between simulated and target + backprop
-                    loss = self.loss_fn(embed_output, embed_target)
+                    loss = self.loss_fn(self.sim_physics, embed_output, embed_target)
                     loss.backward()
 
                     # To be investigated -- sometimes we get nans. Avoid doing a step if so

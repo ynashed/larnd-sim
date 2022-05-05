@@ -1,6 +1,8 @@
 import numpy as np
 from numpy.lib import recfunctions as rfn
 import torch
+import larndsim.consts 
+import larndsim
 
 def torch_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)
@@ -72,12 +74,12 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
 
     indices_torch = torch.where(torch.logical_and(compare_torch[..., 0], compare_torch[...,1]))
     pixel_index_map_torch[indices_torch[0], indices_torch[1]] = indices_torch[2]
-    
+ 
     pixels_signals_torch = sim.sum_pixel_signals(pixels_signals_torch,
                                                  signals_ep,
                                                 track_starts_torch,
                                                 pixel_index_map_torch)
-    
+   
     time_ticks_torch = torch.linspace(0, len(unique_eventIDs)*sim.time_interval[1]*3, pixels_signals_torch.shape[1]+1)
 
     integral_list_torch, adc_ticks_list_torch = sim.get_adc_values(pixels_signals_torch,
@@ -86,7 +88,7 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
     adc_list_torch = sim.digitize(integral_list_torch)
 
     if return_unique_pix:
-        return adc_list_torch, unique_pix_torch, adc_list_torch
+        return adc_list_torch, unique_pix_torch, adc_ticks_list_torch
     else:
         return adc_list_torch
 
@@ -103,49 +105,57 @@ def embed_adc_list(sim, adc_list, unique_pix, ticks_list):
     exp_pix = torch.tile(unique_pix[:, :, None], (1, 1, sim.MAX_ADC_VALUES))
     pix_nz_x = exp_pix[:, 0][mask]
     pix_nz_y = exp_pix[:, 1][mask]
-    ticks_list_nz =  ticks_list[mask]
-    z_nz =  ticks_list_nz*sim.vdrift
-    
-    return torch.stack([pix_nz_x, pix_nz_y, z_nz, ticks_list_nz, adc_nz])
+    time_list_nz =  ticks_list[mask] 
+    #z_nz =  time_list_nz*sim.vdrift
+   
+    # convert pix_nz_x, pix_nz_y to x, y coord (center of the pixel)
+    tpc_plane = pix_nz_x // sim.n_pixels[0]
+    x_nz = (pix_nz_x - tpc_plane * sim.n_pixels[0] + 0.5) * sim.pixel_pitch + sim.tpc_borders[0, 0, 0]
+    y_nz = (pix_nz_y + 0.5) * sim.pixel_pitch + sim.tpc_borders[0, 1, 0]
+    full_drift_t = sim.drift_length / sim.vdrift
+    time_list_nz = (full_drift_t - ticks_list[mask]) * torch.pow(-1, tpc_plane + 1)
+    z_nz = (sim.drift_length - ticks_list[mask] * sim.vdrift) * torch.pow(-1, tpc_plane + 1)
+    return torch.stack([x_nz, y_nz, z_nz, time_list_nz, adc_nz])
 
 # Idea for sparse loss -- compare only non-zero values of guess and target
 # Comparison gets min L2 distance on (x,y,t,q) across points in guess for each 
 # target point (best match), then takes the mean across target points for the loss.
 # If guess == target, min L2 is 0 for all, so loss is 0
-def calc_loss(embed_out, embed_targ, return_components = False):
+# taking any sim for the constant, e.g sim.tpc_borders
+def calc_loss(sim, embed_out, embed_targ, return_components = False):
     # Unroll embedding
-    pix_out_nz_x, pix_out_nz_y, z_out_nz, ticks_list_out_nz, adc_out_nz = embed_out
-    pix_targ_nz_x, pix_targ_nz_y, z_targ_nz, ticks_list_targ_nz, adc_targ_nz = embed_targ
+    x_out_nz, y_out_nz, z_out_nz, time_list_out_nz, adc_out_nz = embed_out
+    x_targ_nz, y_targ_nz, z_targ_nz, time_list_targ_nz, adc_targ_nz = embed_targ
 
     # Indices for all pairs
-    I, J = torch.meshgrid(torch.arange(len(ticks_list_targ_nz)), 
-                          torch.arange(len(ticks_list_out_nz)))
+    I, J = torch.meshgrid(torch.arange(len(time_list_targ_nz)), 
+                          torch.arange(len(time_list_out_nz)))
     
     # Normalize by mean values to avoid dimension imbalance
-    norm_x = ((pix_targ_nz_x.mean() + pix_out_nz_x.mean()) / 2.)**2
-    norm_y = ((pix_targ_nz_y.mean() + pix_out_nz_y.mean()) / 2.)**2
-    norm_ticks = ((ticks_list_targ_nz.mean() + ticks_list_out_nz.mean()) / 2.)**2
-    norm_adc = ((adc_targ_nz.mean() + adc_out_nz.mean()) / 2.)**2
+    norm_x = (sim.tpc_borders[0, 0, 1] - sim.tpc_borders[0, 0, 0])**2
+    norm_y = (sim.tpc_borders[0, 1, 1] - sim.tpc_borders[0, 1, 0])**2
+    norm_time = (sim.time_interval[1] - sim.time_interval[0])**2
+    norm_adc = (adc_targ_nz.mean())**2
 
     # Individual component losses (z included to help point matching)
-    pix_loss_x = (pix_targ_nz_x[I] - pix_out_nz_x[J])**2
-    pix_loss_y = (pix_targ_nz_y[I] - pix_out_nz_y[J])**2
-    ticks_loss = (ticks_list_targ_nz[I] - ticks_list_out_nz[J])**2
+    x_loss = (x_targ_nz[I] - x_out_nz[J])**2
+    y_loss = (y_targ_nz[I] - y_out_nz[J])**2
+    time_loss = (time_list_targ_nz[I] - time_list_out_nz[J])**2
     z_loss = (z_targ_nz[I] - z_out_nz[J])**2
     adc_loss = (adc_targ_nz[I]-adc_out_nz[J])**2
 
     # Spatially match pairs
-    space_match_idxs = torch.argmin(pix_loss_x + pix_loss_y + z_loss, dim=0)
-    #min_idxs = (torch.arange(pix_loss_x.shape[1]), space_match_idxs)
-    min_idxs = (space_match_idxs, torch.arange(pix_loss_x.shape[1]))
+    space_match_idxs = torch.argmin(x_loss + y_loss + z_loss, dim=0)
+    min_idxs = (space_match_idxs, torch.arange(x_loss.shape[1]))
+
     # Can return separate components for debugging, otherwise return loss as discussed above
     if return_components:
-        return (pix_loss_x, 
-                pix_loss_y, 
-                ticks_loss, 
+        return (x_loss, 
+                y_loss, 
+                time_loss, 
                 adc_loss)
     else:
-        return torch.mean((pix_loss_x/norm_x + pix_loss_y/norm_y + ticks_loss/norm_ticks + adc_loss/norm_adc)[min_idxs])
+        return torch.mean((x_loss/norm_x + y_loss/norm_y + time_loss/norm_time + adc_loss/norm_adc)[min_idxs])
 
 def param_l2_reg(param, sim):
     sigma = (ranges[param]['up'] - ranges[param]['down'])/2.
