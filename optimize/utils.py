@@ -52,7 +52,7 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
                                           fields=fields)
 
     unique_pix_torch = torch.empty((0, 2), device=neighboring_pixels_torch.device)
-    pixels_signals_torch = torch.zeros((len(unique_pix_torch), len(sim.time_ticks)*3),
+    pixels_signals_torch = torch.zeros((len(unique_pix_torch), len(sim.time_ticks)*50),
                                        device=unique_pix_torch.device, dtype=selected_tracks.dtype)
 
     shapes_torch = neighboring_pixels_torch.shape
@@ -62,7 +62,7 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
     this_unique_pix_torch = this_unique_pix_torch[(this_unique_pix_torch[:,0] != -1) & (this_unique_pix_torch[:,1] != -1),:]
     unique_pix_torch = torch.cat((unique_pix_torch, this_unique_pix_torch),dim=0)
 
-    this_pixels_signals_torch = torch.zeros((len(this_unique_pix_torch), len(sim.time_ticks)*3),
+    this_pixels_signals_torch = torch.zeros((len(this_unique_pix_torch), len(sim.time_ticks)*50),
                                             device=unique_pix_torch.device)
     pixels_signals_torch = torch.cat((pixels_signals_torch, this_pixels_signals_torch), dim=0)
 
