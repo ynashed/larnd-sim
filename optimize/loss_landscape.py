@@ -4,6 +4,8 @@ import argparse
 import sys, os
 import traceback
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
+import pickle
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
@@ -18,8 +20,22 @@ def main(config):
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
                             load_checkpoint=config.load_checkpoint, lr=config.lr, readout_noise=(not config.no_noise))
-    param_fit.make_target_sim(seed=config.seed)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs)
+    landscape, fname = param_fit.loss_scan(tracks_dataloader, param_range=config.param_range, n_steps=config.n_steps)
+
+    if config.plot:
+        plt.plot(landscape['param_vals'], landscape['losses'])
+        y_range = max(landscape['losses']) - min(landscape['losses'])
+        x_range = max(landscape['param_vals']) - min(landscape['param_vals'])
+        lr=0.02*x_range/(max(landscape['grads']))
+        for i in range(len(landscape['param_vals'])):
+            plt.arrow(landscape['param_vals'][i], landscape['losses'][i], -lr*landscape['grads'][i], 0, 
+                      width=0.01*y_range, head_width=0.05*y_range, 
+                      head_length=0.01*x_range)
+        plt.xlabel(landscape['param'])
+        plt.ylabel('Loss')
+        plt.tight_layout()
+        plt.savefig(fname+".pdf")
+        plt.show()
 
     return 0, 'Fitting successful'
 
@@ -54,8 +70,15 @@ if __name__ == '__main__':
                         help="Random seed for target construction")
     parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
                         help="data size for fitting (number of tracks)")
+    parser.add_argument("--param_range", dest="param_range", default=None, nargs="+", type=float,
+                        help="Param range for loss landscape")
+    parser.add_argument("--n_steps", dest="n_steps", default=10, type=int,
+                        help="Number of steps for loss landscape")
+    parser.add_argument("--plot", dest="plot", default=False, action="store_true",
+                        help="Makes landscape plot with arrows pointing in -grad direction")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
                         help="Run without readout noise")
+                        
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
