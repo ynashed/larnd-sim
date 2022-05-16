@@ -61,6 +61,7 @@ class consts:
         self.cm2mm = 10
 
         self.drift_length = 30.27225 # cm
+        self.vdrift_static = 0.1587 # cm / us
 
         self.tpc_borders = np.zeros((0, 3, 2))
         self.tile_borders = np.zeros((2,2))
@@ -124,6 +125,7 @@ class consts:
         self.time_interval = np.array(detprop['time_interval'])
 
         self.drift_length = detprop['drift_length']
+        self.vdrift_static = detprop['vdrift_static']
 
         self.eField = detprop['eField']
         self.vdrift = detprop['vdrift']

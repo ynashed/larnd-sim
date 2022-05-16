@@ -112,9 +112,9 @@ def embed_adc_list(sim, adc_list, unique_pix, ticks_list):
     tpc_plane = pix_nz_x // sim.n_pixels[0]
     x_nz = (pix_nz_x - tpc_plane * sim.n_pixels[0] + 0.5) * sim.pixel_pitch + sim.tpc_borders[0, 0, 0]
     y_nz = (pix_nz_y + 0.5) * sim.pixel_pitch + sim.tpc_borders[0, 1, 0]
-    full_drift_t = sim.drift_length / sim.vdrift
+    full_drift_t = sim.drift_length / sim.vdrift_static
     time_list_nz = (full_drift_t - ticks_list[mask]) * torch.pow(-1, tpc_plane + 1)
-    z_nz = (sim.drift_length - ticks_list[mask] * sim.vdrift) * torch.pow(-1, tpc_plane + 1)
+    z_nz = (sim.drift_length - ticks_list[mask] * sim.vdrift_static) * torch.pow(-1, tpc_plane + 1)
     return torch.stack([x_nz, y_nz, z_nz, time_list_nz, adc_nz])
 
 # Idea for sparse loss -- compare only non-zero values of guess and target
