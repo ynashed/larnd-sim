@@ -25,7 +25,8 @@ class detsim(consts):
         self.pixel_chunk = pixel_chunk
         consts.__init__(self)
 
-    def time_intervals(self, event_id_map, tracks, fields):
+
+    def time_intervals(self, tracks, fields):
         """
         Find the value of the longest signal time and stores the start
         time of each segment.
@@ -42,7 +43,6 @@ class detsim(consts):
             time_max (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`): array where we store
                 the longest signal time
         """
-        event_id_map_ep = ep.astensor(event_id_map)
         tracks_ep = ep.astensor(tracks)
         tracks_t_end = tracks_ep[:, fields.index("t_end")]
         tracks_t_start = tracks_ep[:, fields.index("t_start")]
@@ -51,11 +51,10 @@ class detsim(consts):
         t_start = ep.maximum(ep.full_like(tracks_t_start, self.time_interval[0]),
                              ((tracks_t_start - self.time_padding) / self.t_sampling) * self.t_sampling)
         t_length = t_end - t_start
-        track_starts = (t_start + event_id_map_ep * self.time_interval[1] * 3).raw
+        track_starts = t_start.raw
 
         time_max = (ep.max(t_length / self.t_sampling + 1))
         return track_starts, time_max.raw
-
 
     def z_interval(self, start_point, end_point, x_p, y_p, tolerance, eps=1e-12):
         """

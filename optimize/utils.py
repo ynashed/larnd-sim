@@ -45,7 +45,8 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
     active_pixels_torch, neighboring_pixels_torch, n_pixels_list_ep = sim.get_pixels(selected_tracks_drift,
                                                                                      fields=fields)
 
-    track_starts_torch, max_length_torch = sim.time_intervals(event_id_map, 
+    #track_starts_torch, max_length_torch = sim.time_intervals(event_id_map, 
+    track_starts_torch, max_length_torch = sim.time_intervals(
                                                               selected_tracks_drift, 
                                                               fields=fields)
     
@@ -80,7 +81,8 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
                                                 track_starts_torch,
                                                 pixel_index_map_torch)
    
-    time_ticks_torch = torch.linspace(0, len(unique_eventIDs)*sim.time_interval[1]*3, pixels_signals_torch.shape[1]+1)
+    #time_ticks_torch = torch.linspace(0, len(unique_eventIDs)*sim.time_interval[1]*3, pixels_signals_torch.shape[1]+1)
+    time_ticks_torch = torch.linspace(0, sim.time_interval[1]*3, pixels_signals_torch.shape[1]+1)
 
     integral_list_torch, adc_ticks_list_torch = sim.get_adc_values(pixels_signals_torch,
                                                                    time_ticks_torch,
@@ -115,6 +117,8 @@ def embed_adc_list(sim, adc_list, unique_pix, ticks_list):
     full_drift_t = sim.drift_length / sim.vdrift_static
     time_list_nz = (full_drift_t - ticks_list[mask]) * torch.pow(-1, tpc_plane + 1)
     z_nz = (sim.drift_length - ticks_list[mask] * sim.vdrift_static) * torch.pow(-1, tpc_plane + 1)
+    print("z_nz: ", z_nz)
+    print("time_list_nz: ", time_list_nz,)
     return torch.stack([x_nz, y_nz, z_nz, time_list_nz, adc_nz])
 
 # Idea for sparse loss -- compare only non-zero values of guess and target

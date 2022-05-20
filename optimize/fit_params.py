@@ -115,53 +115,72 @@ class ParamFitter:
 
                 # Losses for each batch -- used to compute epoch loss
                 losses_batch=[]
-                for i, selected_tracks_torch in enumerate(dataloader):
+                for i, selected_tracks_bt_torch in enumerate(dataloader):
                     # Zero gradients
                     self.optimizer.zero_grad()
 
                     # Get rid of the extra dimension and padding elements for the loaded data
-                    selected_tracks_torch = torch.flatten(selected_tracks_torch, start_dim=0, end_dim=1)
-                    selected_tracks_torch = selected_tracks_torch[selected_tracks_torch[:, self.track_fields.index("dx")] > 0]
-                    event_id_map, unique_eventIDs = get_id_map(selected_tracks_torch, self.track_fields, self.device)
-                    selected_tracks_torch = selected_tracks_torch.to(self.device)
+                    selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
+                    selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
+                    event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
+                    #selected_tracks_torch = selected_tracks_torch.to(self.device)
 
-                    # Simulate target and store them
-                    if epoch == 0:
-                        
-                        target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                    event_id_map, unique_eventIDs,
-                                                    return_unique_pix=True)
-                        embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+                    loss_ev = []
+                    # Calculate loss per event
+                    for ev in unique_eventIDs:
+                        selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
+                        selected_tracks_torch = selected_tracks_torch.to(self.device)
 
-                        torch.save(embed_target, 'target/batch' + str(i) + '_target.pt')
+                        # Simulate target and store them
+                        if epoch == 0:
+                            
+                            target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                                        event_id_map, unique_eventIDs,
+                                                        return_unique_pix=True)
+                            embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
 
-                    else:
-                        embed_target = torch.load('target/batch' + str(i) + '_target.pt')
+                            torch.save(embed_target, 'target/batch' + str(i) + 'ev' + str(ev)+ '_target.pt')
 
-                    # Undo normalization (sim -> sim_physics)
-                    for param in self.relevant_params_list:
-                        setattr(self.sim_physics, param, getattr(self.sim_iter, param)*ranges[param]['nom'])
-                        print(param, getattr(self.sim_physics, param))
+                        else:
+                            embed_target = torch.load('target/batch' + str(i) + 'ev' + str(ev)+ '_target.pt')
 
-                    # Simulate and get output
-                    output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
-                                              event_id_map, unique_eventIDs,
-                                              return_unique_pix=True)
+                        # Undo normalization (sim -> sim_physics)
+                        for param in self.relevant_params_list:
+                            setattr(self.sim_physics, param, getattr(self.sim_iter, param)*ranges[param]['nom'])
+                            print(param, getattr(self.sim_physics, param))
 
-                    # Embed both output and target into "full" image space
-                    embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
+                        # Simulate and get output
+                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
+                                                  event_id_map, unique_eventIDs,
+                                                  return_unique_pix=True)
 
-                    # Calc loss between simulated and target + backprop
-                    loss = self.loss_fn(self.sim_physics, embed_output, embed_target)
-                    loss.backward()
+                        # Embed both output and target into "full" image space
+                        embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
 
-                    # To be investigated -- sometimes we get nans. Avoid doing a step if so
-                    nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
-                    if nan_check == 0 and loss !=0 and not loss.isnan():
-                        self.optimizer.step()
-                        losses_batch.append(loss.item())
+                        # Calc loss between simulated and target + backprop
+                        loss = self.loss_fn(self.sim_physics, embed_output, embed_target)
+#                    loss.backward()
+
+                        # To be investigated -- sometimes we get nans. Avoid doing a step if so
+                        #nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
+                        #if nan_check == 0 and not loss.isnan():
+                        if not loss.isnan():
+                            #self.optimizer.step()
+                            loss_ev.append(loss)
+                            #losses_batch.append(loss.item())
+
+                    # Backpropagte the parameter(s) per batch
+                    if len(loss_ev) > 0:
+                        loss_ev_mean = torch.mean(torch.stack(loss_ev))
+                        loss_ev_mean.backward()
+                        nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
+                        if nan_check == 0:
+                            self.optimizer.step()
+                            losses_batch.append(loss_ev_mean.item())
 
                     pbar.update(1)
+
+                    #loss.backward()
 
                 # Print out params at each epoch
                 if epoch % print_freq == 0:
