@@ -159,15 +159,10 @@ class ParamFitter:
 
                         # Calc loss between simulated and target + backprop
                         loss = self.loss_fn(self.sim_physics, embed_output, embed_target)
-#                    loss.backward()
 
                         # To be investigated -- sometimes we get nans. Avoid doing a step if so
-                        #nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
-                        #if nan_check == 0 and not loss.isnan():
                         if not loss.isnan():
-                            #self.optimizer.step()
                             loss_ev.append(loss)
-                            #losses_batch.append(loss.item())
 
                     # Backpropagte the parameter(s) per batch
                     if len(loss_ev) > 0:
@@ -179,8 +174,6 @@ class ParamFitter:
                             losses_batch.append(loss_ev_mean.item())
 
                     pbar.update(1)
-
-                    #loss.backward()
 
                 # Print out params at each epoch
                 if epoch % print_freq == 0:
@@ -198,3 +191,5 @@ class ParamFitter:
                 if n_steps % save_freq == 0:
                     with open(f'history_epoch{n_steps}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)
+                    if os.path.exists(f'history_epoch{n_steps-save_freq}.pkl'):
+                        os.remove(f'history_epoch{n_steps-save_freq}.pkl') 
