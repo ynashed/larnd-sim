@@ -97,7 +97,7 @@ class ParamFitter:
             print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
             setattr(self.sim_target, param, param_val)
 
-    def fit(self, dataloader, epochs=300, save_freq=5, print_freq=1):
+    def fit(self, dataloader, epochs=300, shuffle=False, save_freq=5, print_freq=1):
         # make a folder for the pixel target
         if os.path.exists('target'):
             shutil.rmtree('target', ignore_errors=True)
@@ -123,7 +123,6 @@ class ParamFitter:
                     selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
                     selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
                     event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
-                    #selected_tracks_torch = selected_tracks_torch.to(self.device)
 
                     loss_ev = []
                     # Calculate loss per event
@@ -131,18 +130,24 @@ class ParamFitter:
                         selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
                         selected_tracks_torch = selected_tracks_torch.to(self.device)
 
-                        # Simulate target and store them
-                        if epoch == 0:
-                            
+                        if shuffle:
                             target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                        event_id_map, unique_eventIDs,
-                                                        return_unique_pix=True)
+                                                                          event_id_map, unique_eventIDs,
+                                                                          return_unique_pix=True)
                             embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
-
-                            torch.save(embed_target, 'target/batch' + str(i) + 'ev' + str(ev)+ '_target.pt')
-
                         else:
-                            embed_target = torch.load('target/batch' + str(i) + 'ev' + str(ev)+ '_target.pt')
+                            # Simulate target and store them
+                            if epoch == 0:
+                                
+                                target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                                                              event_id_map, unique_eventIDs,
+                                                                              return_unique_pix=True)
+                                embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+
+                                torch.save(embed_target, 'target/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
+
+                            else:
+                                embed_target = torch.load('target/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
 
                         # Undo normalization (sim -> sim_physics)
                         for param in self.relevant_params_list:

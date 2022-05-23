@@ -11,7 +11,7 @@ from .dataio import TracksDataset
 def main(config):
     dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz)
     tracks_dataloader = DataLoader(dataset,
-                                  shuffle=True, 
+                                  shuffle=config.data_shuffle, 
                                   batch_size=config.batch_sz,
                                   pin_memory=True, num_workers=config.num_workers)
     param_fit = ParamFitter(config.param_list, dataset.get_track_fields(),
@@ -19,7 +19,7 @@ def main(config):
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
                             load_checkpoint=config.load_checkpoint, lr=config.lr, readout_noise=(not config.no_noise))
     param_fit.make_target_sim(seed=config.seed)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs)
+    param_fit.fit(tracks_dataloader, epochs=config.epochs, shuffle=config.data_shuffle)
 
     return 0, 'Fitting successful'
 
@@ -56,6 +56,8 @@ if __name__ == '__main__':
                         help="data size for fitting (number of tracks)")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
                         help="Flag to turn off readout noise")
+    parser.add_argument("--data_shuffle", dest="data_shuffle", default=False, action="store_true",
+                        help="Flag of data shuffling")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
