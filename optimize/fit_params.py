@@ -202,10 +202,15 @@ class ParamFitter:
 
     def loss_scan(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
 
-        # Include initial value in training history (if haven't loaded a checkpoint)
-        for param in self.relevant_params_list:
-            if len(self.training_history[param]) == 0:
-                self.training_history[param].append(getattr(self.sim_iter, param).item())
+        if len(self.relevant_params_list) > 1: 
+            raise NotImplementedError("Can't do loss scan for more than one variable at a time!")
+
+        param = self.relevant_params_list[0]
+        scan_losses = []
+        scan_grads = []
+        if param_range is None:
+            param_range = [ranges[param]['down'], ranges[param]['up']]
+        param_vals = torch.linspace(param_range[0], param_range[1], n_steps)
 
         # make a folder for the pixel target
         if os.path.exists(f'target_{param}'):
@@ -213,7 +218,7 @@ class ParamFitter:
         os.makedirs(f'target_{param}')
 
         # The training loop
-        with tqdm(total=len(dataloader) * epochs) as pbar:
+        with tqdm(total=len(dataloader) * len(param_vals)) as pbar:
             for run_no, param_val in enumerate(param_vals):
                 setattr(self.sim_iter, param, param_val/ranges[param]['nom'])
                 self.sim_iter.track_gradients([param])
