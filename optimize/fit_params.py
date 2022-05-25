@@ -106,8 +106,8 @@ class ParamFitter:
 
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
-            if len(self.training_history[param]) == 0:
-                self.training_history[param].append(getattr(self.sim_iter, param).item())
+            if len(self.training_history[param + '_target']) == 0:
+                self.training_history[param + '_target'].append(getattr(self.sim_target, param).item())
 
         # The training loop
         with tqdm(total=len(dataloader) * epochs) as pbar:
@@ -187,14 +187,14 @@ class ParamFitter:
 
                 # Keep track of training history
                 for param in self.relevant_params_list:
-                    self.training_history[param].append(getattr(self.sim_iter, param).item())
+                    self.training_history[param].append(getattr(self.sim_iter, param).item()*ranges[param]['nom'])
                 if len(losses_batch) > 0:
                     self.training_history['losses'].append(np.mean(losses_batch))
 
                 # Save history in pkl files
                 n_steps = len(self.training_history[param])
                 if n_steps % save_freq == 0:
-                    with open(f'history_epoch{n_steps}.pkl', "wb") as f_history:
+                    with open(f'history_{param}_epoch{n_steps}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)
-                    if os.path.exists(f'history_epoch{n_steps-save_freq}.pkl'):
-                        os.remove(f'history_epoch{n_steps-save_freq}.pkl') 
+                    if os.path.exists(f'history_{param}_epoch{n_steps-save_freq}.pkl'):
+                        os.remove(f'history_{param}_epoch{n_steps-save_freq}.pkl') 
