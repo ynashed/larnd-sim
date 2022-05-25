@@ -21,7 +21,8 @@ def main(config):
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
                             load_checkpoint=config.load_checkpoint, lr=config.lr, readout_noise=(not config.no_noise))
     param_fit.make_target_sim(seed=config.seed)
-    landscape, fname = param_fit.loss_scan(tracks_dataloader, param_range=config.param_range, n_steps=config.n_steps, shuffle=config.data_shuffle)
+    #landscape, fname = param_fit.loss_scan(tracks_dataloader, param_range=config.param_range, n_steps=config.n_steps, shuffle=config.data_shuffle)
+    landscape, fname = param_fit.loss_scan_batch_sample(tracks_dataloader, param_range=config.param_range, n_steps=config.n_steps, shuffle=config.data_shuffle)
 
     if config.plot:
         plt.plot(landscape['param_vals'], landscape['losses'])
