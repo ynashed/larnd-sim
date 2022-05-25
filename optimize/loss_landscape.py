@@ -11,7 +11,7 @@ from .fit_params import ParamFitter
 from .dataio import TracksDataset
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz)
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed)
     tracks_dataloader = DataLoader(dataset,
                                   shuffle=config.data_shuffle, 
                                   batch_size=config.batch_sz,
@@ -22,7 +22,7 @@ def main(config):
                             load_checkpoint=config.load_checkpoint, lr=config.lr, readout_noise=(not config.no_noise))
     param_fit.make_target_sim(seed=config.seed)
     #landscape, fname = param_fit.loss_scan(tracks_dataloader, param_range=config.param_range, n_steps=config.n_steps, shuffle=config.data_shuffle)
-    landscape, fname = param_fit.loss_scan_batch_sample(tracks_dataloader, param_range=config.param_range, n_steps=config.n_steps, shuffle=config.data_shuffle)
+    landscape, fname = param_fit.loss_scan_batch(tracks_dataloader, param_range=config.param_range, n_steps=config.n_steps, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
     if config.plot:
         plt.plot(landscape['param_vals'], landscape['losses'])
@@ -70,6 +70,8 @@ if __name__ == '__main__':
                         help="Number of epochs")
     parser.add_argument("--seed", dest="seed", default=2, type=int,
                         help="Random seed for target construction")
+    parser.add_argument("--data_seed", dest="data_seed", default=3, type=int,
+                        help="Random seed for data picking if not using the whole set")
     parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
                         help="data size for fitting (number of tracks)")
     parser.add_argument("--param_range", dest="param_range", default=None, nargs="+", type=float,
@@ -82,6 +84,8 @@ if __name__ == '__main__':
                         help="Run without readout noise")
     parser.add_argument("--data_shuffle", dest="data_shuffle", default=False, action="store_true",
                         help="Flag of data shuffling")
+    parser.add_argument("--save_freq", dest="save_freq", default=5, type=int,
+                        help="Save frequency of the result")
                         
     try:
         args = parser.parse_args()

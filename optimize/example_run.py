@@ -9,7 +9,7 @@ from .fit_params import ParamFitter
 from .dataio import TracksDataset
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz)
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed)
     tracks_dataloader = DataLoader(dataset,
                                   shuffle=config.data_shuffle, 
                                   batch_size=config.batch_sz,
@@ -19,7 +19,7 @@ def main(config):
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
                             load_checkpoint=config.load_checkpoint, lr=config.lr, readout_noise=(not config.no_noise))
     param_fit.make_target_sim(seed=config.seed)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs, shuffle=config.data_shuffle)
+    param_fit.fit(tracks_dataloader, epochs=config.epochs, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
     return 0, 'Fitting successful'
 
@@ -52,12 +52,17 @@ if __name__ == '__main__':
                         help="Number of epochs")
     parser.add_argument("--seed", dest="seed", default=2, type=int,
                         help="Random seed for target construction")
+    parser.add_argument("--data_seed", dest="data_seed", default=3, type=int,
+                        help="Random seed for data picking if not using the whole set")
     parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
                         help="data size for fitting (number of tracks)")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
                         help="Flag to turn off readout noise")
     parser.add_argument("--data_shuffle", dest="data_shuffle", default=False, action="store_true",
                         help="Flag of data shuffling")
+    parser.add_argument("--save_freq", dest="save_freq", default=5, type=int,
+                        help="Save frequency of the result")
+
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
