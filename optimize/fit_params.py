@@ -84,6 +84,7 @@ class ParamFitter:
             self.training_history = {}
             for param in self.relevant_params_list:
                 self.training_history[param] = []
+                self.training_history[param + "_target"] = []
             self.training_history['losses'] = []
 
 
@@ -107,7 +108,7 @@ class ParamFitter:
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
             if len(self.training_history[param + '_target']) == 0:
-                self.training_history[param + '_target'].append(getattr(self.sim_target, param).item())
+                self.training_history[param + '_target'].append(getattr(self.sim_target, param))
 
         # The training loop
         with tqdm(total=len(dataloader) * epochs) as pbar:

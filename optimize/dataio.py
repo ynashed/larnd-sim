@@ -13,7 +13,7 @@ def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
 class TracksDataset(Dataset):
-    def __init__(self, filename, ntrack, swap_xz=True):
+    def __init__(self, filename, ntrack, swap_xz=True, seed=3):
 
         with h5py.File(filename, 'r') as f:
             tracks = np.array(f['segments'])
@@ -55,6 +55,7 @@ class TracksDataset(Dataset):
         else:
             # if the information of track index is uninteresting, then the next line + pad_sequence is enough
             # fit_tracks = random.sample(all_tracks, ntrack)
+            random.seed(seed)
             list_rand = random.sample(range(len(index)), ntrack)
             for i_rand in list_rand:
                 fit_index.append(index[i_rand])
