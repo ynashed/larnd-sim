@@ -444,13 +444,15 @@ class ParamFitter:
                 outname = f"result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}"
                 with open(outname+".pkl", "wb") as f:
                     pickle.dump(recording, f)
+                if os.path.exists(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{len(param_vals)-save_freq}.pkl'):
+                    os.remove(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{len(param_vals)-save_freq}.pkl')
 
             # average the loss and grad
             all_scan_losses = []
             all_scan_grads = []
             for i in range(len(dataloader)):
                 #with open(f'loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}.pkl', 'rb') as pkl_file:
-                history = pickle.load(open(f'loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}.pkl', "rb"))
+                history = pickle.load(open(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}.pkl', "rb"))
                 all_scan_losses.append(np.array(history['losses']))
                 all_scan_grads.append(np.array(history['grads']))
             scan_losses_mean = np.mean(np.array(all_scan_losses), axis=0)
