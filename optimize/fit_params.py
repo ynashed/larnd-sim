@@ -129,7 +129,7 @@ class ParamFitter:
                     # Calculate loss per event
                     for ev in unique_eventIDs:
                         selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
-                        selected_tracks_torch = selected_tracks_torch.to(self.device).double()
+                        selected_tracks_torch = selected_tracks_torch.to(self.device)
 
                         if shuffle:
                             target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
