@@ -28,7 +28,7 @@ def test_backward():
         print("Saving new comparison file")
         torch.save(output_with_grads, guess_path)
 
-    loss = calc_loss(output_with_grads, target)
+    loss = calc_loss(sim, output_with_grads, target)
     loss.backward()
 
     recording = {}
