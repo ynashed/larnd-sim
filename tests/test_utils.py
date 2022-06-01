@@ -30,10 +30,10 @@ def calc_forward(with_grad=False, param_list=[], shift=0.05, device='cpu'):
     event_id_map, unique_eventIDs = get_id_map(selected_tracks_torch, track_fields, device)
     selected_tracks_torch = selected_tracks_torch.to(device)
 
-    target, pix_target = all_sim(sim_target, selected_tracks_torch.double(), track_fields,
-                                 event_id_map, unique_eventIDs,
-                                 return_unique_pix=True)
-    embed_target = embed_adc_list(sim_target, target, pix_target)
+    target, pix_target, ticks_list_target = all_sim(sim_target, selected_tracks_torch.double(), track_fields,
+                                                    event_id_map, unique_eventIDs,
+                                                    return_unique_pix=True)
+    embed_target = embed_adc_list(sim_target, target, pix_target, ticks_list_target)
 
     if with_grad:
         return embed_target, sim_target

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-from .test_utils import calc_forward, loss_fn
+from .test_utils import calc_forward
+from optimize.utils import calc_loss
 
 import torch
 import os
@@ -27,7 +28,7 @@ def test_backward():
         print("Saving new comparison file")
         torch.save(output_with_grads, guess_path)
 
-    loss = loss_fn(output_with_grads, target)
+    loss = calc_loss(output_with_grads, target)
     loss.backward()
 
     recording = {}
