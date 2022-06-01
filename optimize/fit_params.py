@@ -84,7 +84,10 @@ class ParamFitter:
             self.training_history = {}
             for param in self.relevant_params_list:
                 self.training_history[param] = []
-                self.training_history[param + "_target"] = []
+
+                self.training_history[param + '_target'] = []
+                self.training_history[param + '_lr'] = [lr]
+
             self.training_history['losses'] = []
 
 
@@ -98,6 +101,7 @@ class ParamFitter:
             print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
             setattr(self.sim_target, param, param_val)
 
+            
     def fit(self, dataloader, epochs=300, shuffle=False, save_freq=5, print_freq=1):
         # make a folder for the pixel target
         if os.path.exists('target'):
@@ -197,5 +201,6 @@ class ParamFitter:
                 if n_steps % save_freq == 0:
                     with open(f'history_{param}_epoch{n_steps}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)
+
                     if os.path.exists(f'history_{param}_epoch{n_steps-save_freq}.pkl'):
                         os.remove(f'history_{param}_epoch{n_steps-save_freq}.pkl') 

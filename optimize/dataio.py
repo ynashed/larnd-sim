@@ -40,11 +40,8 @@ class TracksDataset(Dataset):
             track_set = np.unique(tracks[tracks['eventID'] == ev]['trackID'])
             for trk in track_set:
                 trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
-                #TODO once we enter the end game, this track selection requirement needs to be more accessible. 
-                # For now, we keep it as it is to take consistent data among developers
-                if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > 30:
-                    index.append([ev, trk])
-                    all_tracks.append(torch_from_structured(tracks[trk_msk]))
+                index.append([ev, trk])
+                all_tracks.append(torch_from_structured(tracks[trk_msk]))
 
         # all fit with a sub-set of tracks
         fit_index = []
@@ -63,7 +60,7 @@ class TracksDataset(Dataset):
             self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = -99) 
         
         #self.tracks = torch.nn.utils.rnn.pad_sequence(all_tracks, batch_first=True, padding_value = -99) 
-        print("trainning set [ev, trk]: ", fit_index)
+        print("training set [ev, trk]: ", fit_index)
 
     def __len__(self):
         return len(self.tracks)
