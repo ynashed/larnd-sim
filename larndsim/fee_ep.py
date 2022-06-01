@@ -5,6 +5,7 @@ Module that simulates the front-end electronics (triggering, ADC)
 import numpy as np
 import h5py
 import eagerpy as ep
+import torch
 
 from tqdm import tqdm
 from .consts_ep import consts
@@ -89,7 +90,7 @@ class fee(consts):
         # Collect cumulative charge over all time ticks + add baseline noise
         q_cumsum = q.cumsum(axis=1)
         q_sum = q_sum_base[:, ep.newaxis] + q_cumsum
-
+        
         # Main loop
         for val in range(self.MAX_ADC_VALUES):
 
@@ -97,25 +98,30 @@ class fee(consts):
             q_noise = ep.normal(pixels_signals, pixels_signals.shape) * self.UNCORRELATED_NOISE_CHARGE * self.e_charge
 
             # Find which pixel/time passes threshold
-            cond = q_sum+q_noise >= self.DISCRIMINATION_THRESHOLD
+            cond = (q_sum+q_noise >= self.DISCRIMINATION_THRESHOLD)
 
-            # Index of first threshold passing. Fill in dummies for no passing
-            large_dummy = pixels_signals.shape[1]+1
-            idxs = ep.tile(ep.arange(cond, 0, pixels_signals.shape[1]), 
-                           (pixels_signals.shape[0],)).reshape(pixels_signals.shape)
-            ic = ep.where(cond, idxs, large_dummy).min(axis=1)
+            # Index of first threshold passing. For nice time axis differentiability: first find index window around threshold.
+            idx_pix, idx_t = torch.where((q_sum.raw[:, 1:] >= self.DISCRIMINATION_THRESHOLD) & 
+                        (q_sum.raw[:, :-1] <= self.DISCRIMINATION_THRESHOLD))
+            idx_pix = ep.astensor(idx_pix)
+            idx_t = ep.astensor(idx_t)
+  
+            # Then linearly interpolate for the intersection point.
+            m = (q_sum[idx_pix, idx_t]-q_sum[idx_pix, (idx_t-1)])
+            b = q_sum[idx_pix, idx_t]-m*idx_t
+            idx_val = (self.DISCRIMINATION_THRESHOLD - b)/m
 
+            ic = ep.zeros(idx_val, q_sum.shape[0])
+            ic = ep.index_update(ic, idx_pix, idx_val)
+            
             # End point of integration
             interval = round((3 * self.CLOCK_CYCLE + self.ADC_HOLD_DELAY * self.CLOCK_CYCLE) / self.t_sampling)
             integrate_end = ic+interval
-            integrate_end = ep.where(ic == large_dummy, 0, integrate_end)
             
             #Protect against ic+integrate_end past last index
             integrate_end = ep.where(integrate_end >= q_sum.shape[1], q_sum.shape[1]-1, integrate_end)
  
-            ic = ep.where(ic == large_dummy, 0, ic)
-
-            end2d_idx = tuple(ep.stack([ep.arange(ic, 0, ic.shape[0]), integrate_end]))
+            end2d_idx = tuple(ep.stack([ep.arange(ic, 0, ic.shape[0]).astype(int), integrate_end.astype(int)]))
 
             # Cumulative => value at end is desired value
             q_vals = q_sum[end2d_idx] 
@@ -140,9 +146,9 @@ class fee(consts):
             q_cumsum = q_cumsum - q_vals_no_noise[:, ep.newaxis]
             q_cumsum = ep.where(q_cumsum < 0, 0, q_cumsum)
             q_sum = q_sum_base[:, ep.newaxis] + q_cumsum
-
+           
             # Get ticks
-            adc_ticks_list = time_ticks[ic] + time_padding
+            adc_ticks_list = (time_ticks.max()-time_ticks.min())/time_ticks.shape[0]*ic + time_padding
 
             full_adc.append(adc)
             full_adc_ticks_list.append(adc_ticks_list)

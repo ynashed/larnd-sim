@@ -60,6 +60,9 @@ class consts:
         self.mm2cm = 0.1
         self.cm2mm = 10
 
+        self.drift_length = 30.27225 # cm
+        self.vdrift_static = 0.1587 # cm / us
+
         self.tpc_borders = np.zeros((0, 3, 2))
         self.tile_borders = np.zeros((2,2))
         self.tile_size = np.zeros(3)
@@ -121,8 +124,15 @@ class consts:
 
         self.time_interval = np.array(detprop['time_interval'])
 
+        self.drift_length = detprop['drift_length']
+        self.vdrift_static = detprop['vdrift_static']
+
+        self.eField = detprop['eField']
         self.vdrift = detprop['vdrift']
         self.lifetime = detprop['lifetime']
+        self.MeVToElectrons = detprop['MeVToElectrons']
+        self.Ab = detprop['Ab']
+        self.kb = detprop['kb']
         self.long_diff = detprop['long_diff']
         self.tran_diff = detprop['tran_diff']
 
@@ -155,7 +165,7 @@ class consts:
                        max(this_tpc_tile[:,0])+detprop['drift_length']*this_orientation[:,0][0]+self.tpc_centers[itpc][2]
 
             self.tpc_borders[itpc] = (x_border, y_border, z_border)
-
+     
         #: Number of pixels per axis
         self.n_pixels = len(np.unique(self.xs))*2, len(np.unique(self.ys))*4
         self.n_pixels_per_tile = len(np.unique(self.xs)), len(np.unique(self.ys))

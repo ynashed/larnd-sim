@@ -5,7 +5,7 @@ tpc_centers: # cm
 time_interval: [0, 200.] # us
 
 drift_length: 30.27225 # cm
-
+vdrift_static: 0.1587 # cm / us
 
 eField: 0.50 #kV/cm
 lifetime: 2.2e+3 # us
