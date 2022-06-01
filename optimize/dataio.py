@@ -56,7 +56,7 @@ class TracksDataset(Dataset):
                 random.seed(seed)
                 list_rand = random.sample(range(len(index)), ntrack)
             else:
-                list_rand = np.arange(n_track)
+                list_rand = np.arange(ntrack)
                 
             for i_rand in list_rand:
                 fit_index.append(index[i_rand])
