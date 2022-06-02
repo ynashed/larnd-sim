@@ -9,7 +9,7 @@ from .fit_params import ParamFitter
 from .dataio import TracksDataset
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed)
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed, random_ntrack=config.random_ntrack, track_zlen_sel=config.track_zlen_sel)
     tracks_dataloader = DataLoader(dataset,
                                   shuffle=config.data_shuffle, 
                                   batch_size=config.batch_sz,
@@ -60,6 +60,10 @@ if __name__ == '__main__':
                         help="Flag to turn off readout noise")
     parser.add_argument("--data_shuffle", dest="data_shuffle", default=False, action="store_true",
                         help="Flag of data shuffling")
+    parser.add_argument("--random_ntrack", dest="random_ntrack", default=False, action="store_true",
+                        help="Flag of whether sampling the tracks randomly or sequentially")
+    parser.add_argument("--track_zlen_sel", dest="track_zlen_sel", default=30., type=float,
+                        help="Track selection requirement on the z expansion (drift axis)")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
