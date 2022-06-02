@@ -15,6 +15,8 @@ def main(config):
                                   batch_size=config.batch_sz,
                                   pin_memory=True, num_workers=config.num_workers)
 
+    # For readout noise: no_noise overrides if explicitly set to True. Otherwise, turn on noise
+    # individually for target and guess
     param_fit = ParamFitter(config.param_list, dataset.get_track_fields(),
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
