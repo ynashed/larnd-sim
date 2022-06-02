@@ -13,7 +13,7 @@ def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
 class TracksDataset(Dataset):
-    def __init__(self, filename, ntrack, swap_xz=True, seed=3, random_ntrack=False):
+    def __init__(self, filename, ntrack, swap_xz=True, seed=3, random_ntrack=False, track_zlen_sel=30):
 
         with h5py.File(filename, 'r') as f:
             tracks = np.array(f['segments'])
@@ -40,8 +40,11 @@ class TracksDataset(Dataset):
             track_set = np.unique(tracks[tracks['eventID'] == ev]['trackID'])
             for trk in track_set:
                 trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
-                index.append([ev, trk])
-                all_tracks.append(torch_from_structured(tracks[trk_msk]))
+                #TODO once we enter the end game, this track selection requirement needs to be more accessible.
+                # For now, we keep it as it is to take consistent data among developers
+                if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > track_zlen_sel:
+                    index.append([ev, trk])
+                    all_tracks.append(torch_from_structured(tracks[trk_msk]))
 
         # all fit with a sub-set of tracks
         fit_index = []
