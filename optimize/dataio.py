@@ -13,7 +13,7 @@ def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
 class TracksDataset(Dataset):
-    def __init__(self, filename, ntrack, swap_xz=True, seed=3):
+    def __init__(self, filename, ntrack, swap_xz=True, seed=3, random_ntrack=False, track_zlen_sel=30):
 
         with h5py.File(filename, 'r') as f:
             tracks = np.array(f['segments'])
@@ -40,9 +40,9 @@ class TracksDataset(Dataset):
             track_set = np.unique(tracks[tracks['eventID'] == ev]['trackID'])
             for trk in track_set:
                 trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
-                #TODO once we enter the end game, this track selection requirement needs to be more accessible. 
+                #TODO once we enter the end game, this track selection requirement needs to be more accessible.
                 # For now, we keep it as it is to take consistent data among developers
-                if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > 30:
+                if max(tracks[trk_msk]['z']) - min(tracks[trk_msk]['z']) > track_zlen_sel:
                     index.append([ev, trk])
                     all_tracks.append(torch_from_structured(tracks[trk_msk]))
 
@@ -55,15 +55,19 @@ class TracksDataset(Dataset):
         else:
             # if the information of track index is uninteresting, then the next line + pad_sequence is enough
             # fit_tracks = random.sample(all_tracks, ntrack)
-            random.seed(seed)
-            list_rand = random.sample(range(len(index)), ntrack)
+            if random_ntrack:
+                random.seed(seed)
+                list_rand = random.sample(range(len(index)), ntrack)
+            else:
+                list_rand = np.arange(ntrack)
+                
             for i_rand in list_rand:
                 fit_index.append(index[i_rand])
                 fit_tracks.append(all_tracks[i_rand])
             self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = -99) 
         
         #self.tracks = torch.nn.utils.rnn.pad_sequence(all_tracks, batch_first=True, padding_value = -99) 
-        print("trainning set [ev, trk]: ", fit_index)
+        print("training set [ev, trk]: ", fit_index)
 
     def __len__(self):
         return len(self.tracks)

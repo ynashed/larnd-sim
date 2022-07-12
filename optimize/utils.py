@@ -1,8 +1,6 @@
 import numpy as np
 from numpy.lib import recfunctions as rfn
 import torch
-import larndsim.consts 
-import larndsim
 
 def torch_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)

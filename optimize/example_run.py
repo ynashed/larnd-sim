@@ -9,15 +9,20 @@ from .fit_params import ParamFitter
 from .dataio import TracksDataset
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed)
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed, random_ntrack=config.random_ntrack, track_zlen_sel=config.track_zlen_sel)
     tracks_dataloader = DataLoader(dataset,
                                   shuffle=config.data_shuffle, 
                                   batch_size=config.batch_sz,
                                   pin_memory=True, num_workers=config.num_workers)
+
+    # For readout noise: no_noise overrides if explicitly set to True. Otherwise, turn on noise
+    # individually for target and guess
     param_fit = ParamFitter(config.param_list, dataset.get_track_fields(),
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
-                            load_checkpoint=config.load_checkpoint, lr=config.lr, readout_noise=(not config.no_noise))
+                            load_checkpoint=config.load_checkpoint, lr=config.lr, 
+                            readout_noise_target=(not config.no_noise) and (not config.no_noise_target),
+                            readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess))
     param_fit.make_target_sim(seed=config.seed)
     param_fit.fit(tracks_dataloader, epochs=config.epochs, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
@@ -57,11 +62,19 @@ if __name__ == '__main__':
     parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
                         help="data size for fitting (number of tracks)")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
-                        help="Flag to turn off readout noise")
+                        help="Flag to turn off readout noise (both target and guess)")
+    parser.add_argument("--no-noise-target", dest="no_noise_target", default=False, action="store_true",
+                        help="Flag to turn off readout noise (just target, guess has noise)")
+    parser.add_argument("--no-noise-guess", dest="no_noise_guess", default=False, action="store_true",
+                        help="Flag to turn off readout noise (just guess, target has noise)")
     parser.add_argument("--data_shuffle", dest="data_shuffle", default=False, action="store_true",
                         help="Flag of data shuffling")
     parser.add_argument("--save_freq", dest="save_freq", default=5, type=int,
                         help="Save frequency of the result")
+    parser.add_argument("--random_ntrack", dest="random_ntrack", default=False, action="store_true",
+                        help="Flag of whether sampling the tracks randomly or sequentially")
+    parser.add_argument("--track_zlen_sel", dest="track_zlen_sel", default=30., type=float,
+                        help="Track selection requirement on the z expansion (drift axis)")
 
     try:
         args = parser.parse_args()
