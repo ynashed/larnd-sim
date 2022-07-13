@@ -157,7 +157,6 @@ class ParamFitter:
                         # Undo normalization (sim -> sim_physics)
                         for param in self.relevant_params_list:
                             setattr(self.sim_physics, param, getattr(self.sim_iter, param)*ranges[param]['nom'])
-                            print(param, getattr(self.sim_physics, param))
 
                         # Simulate and get output
                         output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
