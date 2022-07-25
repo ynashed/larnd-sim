@@ -14,8 +14,9 @@ from tqdm import tqdm
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
-                 lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False):
+                 lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, out_label=""):
 
+        self.out_label = out_label
         # If you have access to a GPU, sim works trivially/is much faster
         if torch.cuda.is_available():
             self.device = 'cuda'
@@ -30,7 +31,7 @@ class ParamFitter:
             self.relevant_params_list = relevant_params
             self.relevant_params_dict = None
         else:
-            raise TypeError("relevant_params must be list of param names or dict with learning rates")
+            raise TypeError("relevant_params must be list of param names or list of dicts with learning rates")
 
         is_continue = False
         if load_checkpoint is not None:
@@ -48,7 +49,7 @@ class ParamFitter:
         # Normalize parameters to init at 1, or set to checkpointed values
         for param in self.relevant_params_list:
             if is_continue:
-                setattr(self.sim_iter, param, history[param][-1])
+                setattr(self.sim_iter, param, history[param][-1]/ranges[param]['nom'])
             else:
                 setattr(self.sim_iter, param, getattr(self.sim_iter, param)/ranges[param]['nom'])
 
@@ -67,7 +68,10 @@ class ParamFitter:
                 else:
                     self.optimizer = torch.optim.SGD([getattr(self.sim_iter, param) for param in self.relevant_params_list], lr=lr)
             else:
-                 self.optimizer = torch.optim.SGD(self.relevant_params_dict)
+                param_config_list = []
+                for param in self.relevant_params_dict.keys():
+                    param_config_list.append({'params': [getattr(self.sim_iter, param)], 'lr' : float(self.relevant_params_dict[param])})
+                self.optimizer = torch.optim.SGD(param_config_list)
 
         else:
             self.optimizer = optimizer
@@ -104,15 +108,16 @@ class ParamFitter:
             
     def fit(self, dataloader, epochs=300, shuffle=False, save_freq=5, print_freq=1):
         # make a folder for the pixel target
-        if os.path.exists('target'):
-            shutil.rmtree('target', ignore_errors=True)
-        os.makedirs('target')
+        if os.path.exists('target_' + self.out_label):
+            shutil.rmtree('target_' + self.out_label, ignore_errors=True)
+        os.makedirs('target_' + self.out_label)
 
 
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
-            if len(self.training_history[param + '_target']) == 0:
-                self.training_history[param + '_target'].append(getattr(self.sim_target, param))
+            if len(self.training_history[param]) == 0:
+                self.training_history[param].append(getattr(self.sim_physics, param))
+                self.training_history[param+'_target'].append(getattr(self.sim_target, param))
 
         # The training loop
         with tqdm(total=len(dataloader) * epochs) as pbar:
@@ -149,10 +154,10 @@ class ParamFitter:
                                                                               return_unique_pix=True)
                                 embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
 
-                                torch.save(embed_target, 'target/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
+                                torch.save(embed_target, 'target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
 
                             else:
-                                embed_target = torch.load('target/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
+                                embed_target = torch.load('target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
 
                         # Undo normalization (sim -> sim_physics)
                         for param in self.relevant_params_list:
@@ -198,10 +203,10 @@ class ParamFitter:
                 # Save history in pkl files
                 n_steps = len(self.training_history[param])
                 if n_steps % save_freq == 0:
-                    with open(f'history_{param}_epoch{n_steps}.pkl', "wb") as f_history:
+                    with open(f'history_{param}_epoch{n_steps}_{self.out_label}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)
-                    if os.path.exists(f'history_{param}_epoch{n_steps-save_freq}.pkl'):
-                        os.remove(f'history_{param}_epoch{n_steps-save_freq}.pkl') 
+                    if os.path.exists(f'history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
+                        os.remove(f'history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl') 
 
 
     def loss_scan_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
@@ -355,4 +360,3 @@ class ParamFitter:
                 pickle.dump(recording, f)
 
         return recording, outname
-
