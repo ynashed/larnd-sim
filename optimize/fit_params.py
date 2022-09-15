@@ -11,12 +11,37 @@ import torch
 
 from tqdm import tqdm
 
+def normalize_param(param_val, param_name, scheme="divide", undo_norm=False):
+    if scheme == "divide":
+        if undo_norm:
+            out_val = param_val * ranges[param_name]['nom']
+        else:
+            out_val = param_val / ranges[param_name]['nom']
+
+        return out_val
+    elif scheme == "standard":
+        sigma = (ranges[param_name]['up'] - ranges[param_name]['down']) / 2.
+
+        if undo_norm:
+            out_val = param_val*sigma**2 + ranges[param_name]['nom']
+        else:
+            out_val = (param_val - ranges[param_name]['nom']) / sigma**2
+            
+        return out_val
+    else:
+        raise ValueError(f"No normalization method called {scheme}")
+
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
-                 lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, out_label=""):
+                 lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
+                 out_label="", norm_scheme="divide", max_clip_norm_val=None):
 
         self.out_label = out_label
+        self.norm_scheme = norm_scheme
+        self.max_clip_norm_val = max_clip_norm_val
+        if self.max_clip_norm_val is not None:
+            print(f"Will clip gradient norm at {self.max_clip_norm_val}")
         # If you have access to a GPU, sim works trivially/is much faster
         if torch.cuda.is_available():
             self.device = 'cuda'
@@ -49,9 +74,9 @@ class ParamFitter:
         # Normalize parameters to init at 1, or set to checkpointed values
         for param in self.relevant_params_list:
             if is_continue:
-                setattr(self.sim_iter, param, history[param][-1]/ranges[param]['nom'])
+                setattr(self.sim_iter, param, normalize_param(history[param][-1], param, scheme=self.norm_scheme))
             else:
-                setattr(self.sim_iter, param, getattr(self.sim_iter, param)/ranges[param]['nom'])
+                setattr(self.sim_iter, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme))
 
         # Keep track of gradients in sim_iter
         self.sim_iter.track_gradients(self.relevant_params_list)
@@ -61,17 +86,21 @@ class ParamFitter:
         self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
 
         # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
+        lr_dict = {}
         if optimizer is None:
             if self.relevant_params_dict is None:
                 if lr is None:
                     raise ValueError("Need to specify lr for params")
                 else:
                     self.optimizer = torch.optim.SGD([getattr(self.sim_iter, param) for param in self.relevant_params_list], lr=lr)
+                    for param in self.relevant_params_list:
+                        lr_dict[param] = lr
             else:
                 param_config_list = []
                 for param in self.relevant_params_dict.keys():
                     param_config_list.append({'params': [getattr(self.sim_iter, param)], 'lr' : float(self.relevant_params_dict[param])})
-                self.optimizer = torch.optim.SGD(param_config_list)
+                    lr_dict[param] = float(self.relevant_params_dict[param])
+                self.optimizer = torch.optim.Adam(param_config_list)
 
         else:
             self.optimizer = optimizer
@@ -88,19 +117,24 @@ class ParamFitter:
             self.training_history = {}
             for param in self.relevant_params_list:
                 self.training_history[param] = []
+                self.training_history[param+"_grad"] = []
 
                 self.training_history[param + '_target'] = []
-                self.training_history[param + '_lr'] = [lr]
+                self.training_history[param + '_lr'] = [lr_dict[param]]
 
             self.training_history['losses'] = []
+            self.training_history['norm_scheme'] = self.norm_scheme
 
-
-    def make_target_sim(self, seed=2):
+    def make_target_sim(self, seed=2, fixed_range=None):
         np.random.seed(seed)
         print("Constructing target param simulation")
         for param in self.relevant_params_list:
-            param_val = np.random.uniform(low=ranges[param]['down'], 
-                                          high=ranges[param]['up'])
+            if fixed_range is not None:
+                param_val = np.random.uniform(low=ranges[param]['nom']*(1.-fixed_range), 
+                                              high=ranges[param]['nom']*(1.+fixed_range))
+            else:
+                param_val = np.random.uniform(low=ranges[param]['down'], 
+                                              high=ranges[param]['up'])
 
             print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
             setattr(self.sim_target, param, param_val)
@@ -161,7 +195,7 @@ class ParamFitter:
 
                         # Undo normalization (sim -> sim_physics)
                         for param in self.relevant_params_list:
-                            setattr(self.sim_physics, param, getattr(self.sim_iter, param)*ranges[param]['nom'])
+                            setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
                             print(param, getattr(self.sim_physics, param))
 
                         # Simulate and get output
@@ -179,12 +213,17 @@ class ParamFitter:
                         if not loss.isnan():
                             loss_ev.append(loss)
 
-                    # Backpropagte the parameter(s) per batch
+                    # Backpropagate the parameter(s) per batch
                     if len(loss_ev) > 0:
                         loss_ev_mean = torch.mean(torch.stack(loss_ev))
                         loss_ev_mean.backward()
                         nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
                         if nan_check == 0:
+                            for param in self.relevant_params_list:
+                                self.training_history[param+"_grad"].append(getattr(self.sim_iter, param).grad.item())
+                            if self.max_clip_norm_val is not None:
+                                torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param) for param in self.relevant_params_list],
+                                                               self.max_clip_norm_val)
                             self.optimizer.step()
                             losses_batch.append(loss_ev_mean.item())
 
@@ -197,7 +236,7 @@ class ParamFitter:
 
                 # Keep track of training history
                 for param in self.relevant_params_list:
-                    self.training_history[param].append(getattr(self.sim_iter, param).item()*ranges[param]['nom'])
+                    self.training_history[param].append(normalize_param(getattr(self.sim_iter, param).item(), param, scheme=self.norm_scheme, undo_norm=True))
                 if len(losses_batch) > 0:
                     self.training_history['losses'].append(np.mean(losses_batch))
 

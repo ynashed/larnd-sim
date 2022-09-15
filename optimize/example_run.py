@@ -38,8 +38,8 @@ def main(config):
                             load_checkpoint=config.load_checkpoint, lr=config.lr, 
                             readout_noise_target=(not config.no_noise) and (not config.no_noise_target),
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
-                            out_label=config.out_label)
-    param_fit.make_target_sim(seed=config.seed)
+                            out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val)
+    param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
     param_fit.fit(tracks_dataloader, epochs=config.epochs, shuffle=config.data_shuffle)
 
     return 0, 'Fitting successful'
@@ -93,6 +93,12 @@ if __name__ == '__main__':
                         help="Set z bound to keep healthy set of tracks")
     parser.add_argument("--out_label", dest="out_label", default="",
                         help="Label for output pkl file")
+    parser.add_argument("--fixed_range", dest="fixed_range", default=None, type=float,
+                        help="Construct target by sampling in a certain range (fraction of nominal)")
+    parser.add_argument("--norm_scheme", dest="norm_scheme", default="divide",
+                        help="Normalization scheme to use for params. Right now, divide (by nom) and standard (subtract mean, div by variance)")
+    parser.add_argument("--max_clip_norm_val", dest="max_clip_norm_val", default=None, type=float,
+                        help="If passed, does gradient clipping (norm)")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
