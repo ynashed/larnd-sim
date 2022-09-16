@@ -38,7 +38,8 @@ def main(config):
                             load_checkpoint=config.load_checkpoint, lr=config.lr, 
                             readout_noise_target=(not config.no_noise) and (not config.no_noise_target),
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
-                            out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val)
+                            out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val,
+                            fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
     param_fit.fit(tracks_dataloader, epochs=config.epochs, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
@@ -101,6 +102,10 @@ if __name__ == '__main__':
                         help="Normalization scheme to use for params. Right now, divide (by nom) and standard (subtract mean, div by variance)")
     parser.add_argument("--max_clip_norm_val", dest="max_clip_norm_val", default=None, type=float,
                         help="If passed, does gradient clipping (norm)")
+    parser.add_argument("--fit_diffs", dest="fit_diffs", default=False, action="store_true",
+                        help="Turns on fitting of differences rather than direct fitting of values")
+    parser.add_argument("--optimizer_fn", dest="optimizer_fn", default="Adam",
+                        help="Choose optimizer function (here Adam vs SGD")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)

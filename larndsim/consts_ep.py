@@ -5,7 +5,6 @@ Module containing constants needed by the simulation
 import numpy as np
 import yaml
 import torch
-from .ranges import ranges
 
 class manage_diff:
     '''
@@ -206,8 +205,8 @@ class consts:
         for param in param_list:
             try:
                 if fit_diffs:
-                    nom_val = ranges[param]['nom']
-                    diff_val = getattr(self, param) - getattr(self, f'{param}_nom')
+                    nom_val = getattr(self, param)
+                    diff_val = 0.
                     setattr(self, f'{param}_nom', torch.tensor(nom_val))
                     setattr(self, f'{param}_diff', torch.tensor(diff_val, requires_grad=True))
                 else:

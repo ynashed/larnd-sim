@@ -28,6 +28,8 @@ def normalize_param(param_val, param_name, scheme="divide", undo_norm=False):
             out_val = (param_val - ranges[param_name]['nom']) / sigma**2
             
         return out_val
+    elif scheme == "none":
+        return param_val
     else:
         raise ValueError(f"No normalization method called {scheme}")
 
@@ -35,13 +37,23 @@ class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
                  lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
-                 out_label="", norm_scheme="divide", max_clip_norm_val=None):
+                 out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam"):
+
+        if optimizer_fn == "Adam":
+            self.optimizer_fn = torch.optim.Adam
+        elif optimizer_fn == "SGD":
+            self.optimizer_fn = torch.optim.SGD
+        else:
+            raise NotImplementedError("Only SGD and Adam supported")
+        self.optimizer_fn_name = optimizer_fn
 
         self.out_label = out_label
         self.norm_scheme = norm_scheme
         self.max_clip_norm_val = max_clip_norm_val
         if self.max_clip_norm_val is not None:
             print(f"Will clip gradient norm at {self.max_clip_norm_val}")
+
+        self.fit_diffs = fit_diffs
         # If you have access to a GPU, sim works trivially/is much faster
         if torch.cuda.is_available():
             self.device = 'cuda'
@@ -79,7 +91,7 @@ class ParamFitter:
                 setattr(self.sim_iter, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme))
 
         # Keep track of gradients in sim_iter
-        self.sim_iter.track_gradients(self.relevant_params_list)
+        self.sim_iter.track_gradients(self.relevant_params_list, fit_diffs=self.fit_diffs)
 
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
         self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess)
@@ -92,15 +104,21 @@ class ParamFitter:
                 if lr is None:
                     raise ValueError("Need to specify lr for params")
                 else:
-                    self.optimizer = torch.optim.SGD([getattr(self.sim_iter, param) for param in self.relevant_params_list], lr=lr)
+                    if self.fit_diffs:
+                        self.optimizer = self.optimizer_fn([getattr(self.sim_iter, param+"_diff") for param in self.relevant_params_list], lr=lr)
+                    else:
+                        self.optimizer = self.optimizer_fn([getattr(self.sim_iter, param) for param in self.relevant_params_list], lr=lr)
                     for param in self.relevant_params_list:
                         lr_dict[param] = lr
             else:
                 param_config_list = []
                 for param in self.relevant_params_dict.keys():
-                    param_config_list.append({'params': [getattr(self.sim_iter, param)], 'lr' : float(self.relevant_params_dict[param])})
+                    if self.fit_diffs:
+                        param_config_list.append({'params': [getattr(self.sim_iter, param+"_diff")], 'lr' : float(self.relevant_params_dict[param])})
+                    else:
+                        param_config_list.append({'params': [getattr(self.sim_iter, param)], 'lr' : float(self.relevant_params_dict[param])})
                     lr_dict[param] = float(self.relevant_params_dict[param])
-                self.optimizer = torch.optim.Adam(param_config_list)
+                self.optimizer = self.optimizer_fn(param_config_list)
 
         else:
             self.optimizer = optimizer
@@ -124,6 +142,8 @@ class ParamFitter:
 
             self.training_history['losses'] = []
             self.training_history['norm_scheme'] = self.norm_scheme
+            self.training_history['fit_diffs'] = self.fit_diffs
+            self.training_history['optimizer_fn_name'] = self.optimizer_fn_name 
 
     def make_target_sim(self, seed=2, fixed_range=None):
         np.random.seed(seed)
@@ -217,12 +237,22 @@ class ParamFitter:
                     if len(loss_ev) > 0:
                         loss_ev_mean = torch.mean(torch.stack(loss_ev))
                         loss_ev_mean.backward()
-                        nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
+                        if self.fit_diffs:
+                            nan_check = torch.tensor([getattr(self.sim_iter, param+"_diff").grad.isnan() for param in self.relevant_params_list]).sum()
+                        else:
+                            nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
                         if nan_check == 0:
                             for param in self.relevant_params_list:
-                                self.training_history[param+"_grad"].append(getattr(self.sim_iter, param).grad.item())
+                                if self.fit_diffs:
+                                    self.training_history[param+"_grad"].append(getattr(self.sim_iter, param+"_diff").grad.item())
+                                else:
+                                    self.training_history[param+"_grad"].append(getattr(self.sim_iter, param).grad.item())
                             if self.max_clip_norm_val is not None:
-                                torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param) for param in self.relevant_params_list],
+                                if self.fit_diffs:
+                                    torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param+"_diff") for param in self.relevant_params_list],
+                                                               self.max_clip_norm_val)
+                                else:
+                                    torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param) for param in self.relevant_params_list],
                                                                self.max_clip_norm_val)
                             self.optimizer.step()
                             losses_batch.append(loss_ev_mean.item())
