@@ -5,8 +5,37 @@ Module containing constants needed by the simulation
 import numpy as np
 import yaml
 import torch
+from .ranges import ranges
+
+class manage_diff:
+    '''
+    Descriptor class to allow for easy switching between full values vs nominal + diffs
+    '''
+    def __set_name__(self, owner, name):
+        self.public_name = name
+        self.private_name = '_' + name
+        
+    def __get__(self, obj, objtype=None):
+        if f'{self.public_name}_diff' in obj.__dict__.keys():
+            nom = getattr(obj, f'{self.public_name}_nom')
+            diff = getattr(obj, f'{self.public_name}_diff')
+            return nom + diff
+        else:
+            return getattr(obj, self.private_name)
+        
+    def __set__(self, obj, value):
+        setattr(obj, self.private_name, value)
 
 class consts:
+    ## There might be a better way to do this, but for now give the option to fit diffs for usual param set
+    eField = manage_diff()
+    Ab = manage_diff()
+    kb = manage_diff()
+    lifetime = manage_diff()
+    vdrift = manage_diff()
+    long_diff = manage_diff()
+    tran_diff = manage_diff()
+
     def __init__(self):
         ## Turn smoothing on/off to help gradients
         self.smooth = True
@@ -172,10 +201,17 @@ class consts:
 
         self.tile_map = ((7,5,3,1),(8,6,4,2)),((16,14,12,10),(15,13,11,9))
 
-    def track_gradients(self, param_list):
+    def track_gradients(self, param_list, fit_diffs = False):
+        self.fit_diffs = fit_diffs
         for param in param_list:
             try:
-                attr = getattr(self, param)
-                setattr(self, param, torch.tensor(float(attr), requires_grad=True))
+                if fit_diffs:
+                    nom_val = ranges[param]['nom']
+                    diff_val = getattr(self, param) - getattr(self, f'{param}_nom')
+                    setattr(self, f'{param}_nom', torch.tensor(nom_val))
+                    setattr(self, f'{param}_diff', torch.tensor(diff_val, requires_grad=True))
+                else:
+                    attr = getattr(self, param)
+                    setattr(self, param, torch.tensor(float(attr), requires_grad=True))
             except:
                 raise ValueError(f"Unable to track gradients for param {param}")
