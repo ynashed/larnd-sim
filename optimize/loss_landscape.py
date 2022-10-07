@@ -4,6 +4,8 @@ import argparse
 import sys, os
 import traceback
 from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
+import pickle
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
@@ -14,17 +16,32 @@ def main(config):
                                   shuffle=config.data_shuffle, 
                                   batch_size=config.batch_sz,
                                   pin_memory=True, num_workers=config.num_workers)
-
     # For readout noise: no_noise overrides if explicitly set to True. Otherwise, turn on noise
     # individually for target and guess
     param_fit = ParamFitter(config.param_list, dataset.get_track_fields(),
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
-                            load_checkpoint=config.load_checkpoint, lr=config.lr, 
+                            load_checkpoint=config.load_checkpoint, lr=config.lr,
                             readout_noise_target=(not config.no_noise) and (not config.no_noise_target),
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess))
+
     param_fit.make_target_sim(seed=config.seed)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs, shuffle=config.data_shuffle, save_freq=config.save_freq)
+    landscape, fname = param_fit.loss_scan_batch(tracks_dataloader, param_range=config.param_range, n_steps=config.n_steps, shuffle=config.data_shuffle, save_freq=config.save_freq)
+
+    if config.plot:
+        plt.plot(landscape['param_vals'], landscape['losses'])
+        y_range = max(landscape['losses']) - min(landscape['losses'])
+        x_range = max(landscape['param_vals']) - min(landscape['param_vals'])
+        lr=0.02*x_range/(max(landscape['grads']))
+        for i in range(len(landscape['param_vals'])):
+            plt.arrow(landscape['param_vals'][i], landscape['losses'][i], -lr*landscape['grads'][i], 0, 
+                      width=0.01*y_range, head_width=0.05*y_range, 
+                      head_length=0.01*x_range)
+        plt.xlabel(landscape['param'])
+        plt.ylabel('Loss')
+        plt.tight_layout()
+        plt.savefig(fname+".pdf")
+        plt.show()
 
     return 0, 'Fitting successful'
 
@@ -61,6 +78,12 @@ if __name__ == '__main__':
                         help="Random seed for data picking if not using the whole set")
     parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
                         help="data size for fitting (number of tracks)")
+    parser.add_argument("--param_range", dest="param_range", default=None, nargs="+", type=float,
+                        help="Param range for loss landscape")
+    parser.add_argument("--n_steps", dest="n_steps", default=10, type=int,
+                        help="Number of steps for loss landscape")
+    parser.add_argument("--plot", dest="plot", default=False, action="store_true",
+                        help="Makes landscape plot with arrows pointing in -grad direction")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
                         help="Flag to turn off readout noise (both target and guess)")
     parser.add_argument("--no-noise-target", dest="no_noise_target", default=False, action="store_true",
@@ -76,6 +99,7 @@ if __name__ == '__main__':
     parser.add_argument("--track_zlen_sel", dest="track_zlen_sel", default=30., type=float,
                         help="Track selection requirement on the z expansion (drift axis)")
 
+                        
     try:
         args = parser.parse_args()
         retval, status_message = main(args)

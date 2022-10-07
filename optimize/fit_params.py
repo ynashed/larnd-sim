@@ -157,7 +157,6 @@ class ParamFitter:
                         # Undo normalization (sim -> sim_physics)
                         for param in self.relevant_params_list:
                             setattr(self.sim_physics, param, getattr(self.sim_iter, param)*ranges[param]['nom'])
-                            print(param, getattr(self.sim_physics, param))
 
                         # Simulate and get output
                         output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
@@ -201,6 +200,159 @@ class ParamFitter:
                 if n_steps % save_freq == 0:
                     with open(f'history_{param}_epoch{n_steps}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)
-
                     if os.path.exists(f'history_{param}_epoch{n_steps-save_freq}.pkl'):
                         os.remove(f'history_{param}_epoch{n_steps-save_freq}.pkl') 
+
+
+    def loss_scan_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
+
+        if len(self.relevant_params_list) > 1:
+            raise NotImplementedError("Can't do loss scan for more than one variable at a time!")
+
+        param = self.relevant_params_list[0]
+        if param_range is None:
+            param_range = [ranges[param]['down'], ranges[param]['up']]
+        param_vals = torch.linspace(param_range[0], param_range[1], n_steps)
+
+        # make a folder for the pixel target
+        if os.path.exists(f'target_{param}_batch'):
+            shutil.rmtree(f'target_{param}_batch', ignore_errors=True)
+        os.makedirs(f'target_{param}_batch')
+
+        # make a folder for the output
+        if os.path.exists(f'result_{param}'):
+            shutil.rmtree(f'result_{param}', ignore_errors=True)
+        os.makedirs(f'result_{param}')
+
+        # The scanning loop
+        with tqdm(total=len(param_vals)*len(dataloader)) as pbar:
+            for i, selected_tracks_bt_torch in enumerate(dataloader):
+                # Losses for each batch
+                scan_losses = []
+                scan_grads = []
+
+                # Get rid of the extra dimension and padding elements for the loaded data
+                selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
+                selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
+                event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
+
+                # set up target per batch
+                for ev in unique_eventIDs:
+                    print("batch: " + str(i) + '; ev:' + str(int(ev)))
+                    selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
+                    selected_tracks_torch = selected_tracks_torch.to(self.device)
+
+                    if shuffle:
+                        target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                                                      event_id_map, unique_eventIDs,
+                                                                      return_unique_pix=True)
+                        embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+                    else:
+                        # Simulate target and store them
+                        if os.path.exists(f'target_{param}_batch/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt'):
+                            embed_target = torch.load(f'target_{param}_batch/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
+ 
+                        else:
+                            target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                                                          event_id_map, unique_eventIDs,
+                                                                          return_unique_pix=True)
+                            embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+
+                            torch.save(embed_target, f'target_{param}_batch/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
+
+
+                for run_no, param_val in enumerate(param_vals):
+                    setattr(self.sim_iter, param, param_val/ranges[param]['nom'])
+                    self.sim_iter.track_gradients([param])
+
+                    loss_ev_per_val = []
+                    # Calculate loss per event
+                    for ev in unique_eventIDs:
+
+                        # Undo normalization (sim -> sim_physics)
+                        for param in self.relevant_params_list:
+                            setattr(self.sim_physics, param, getattr(self.sim_iter, param)*ranges[param]['nom'])
+                            if run_no % print_freq == 0:
+                                print(param, getattr(self.sim_physics, param))
+
+                        # Simulate and get output
+                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
+                                                  event_id_map, unique_eventIDs,
+                                                  return_unique_pix=True)
+
+                        # Embed both output and target into "full" image space
+                        embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
+
+                        # Calc loss between simulated and target + backprop
+                        loss = self.loss_fn(self.sim_physics, embed_output, embed_target)
+
+                        # To be investigated -- sometimes we get nans. Avoid doing a step if so
+                        if not loss.isnan():
+                            loss_ev_per_val.append(loss)
+
+                    # Average out the loss in different events per batch
+                    if len(loss_ev_per_val) > 0:
+                        loss_ev_mean = torch.mean(torch.stack(loss_ev_per_val))
+                        loss_ev_mean.backward()
+                        scan_losses.append(loss_ev_mean.item())
+                        scan_grads.append(getattr(self.sim_iter, param).grad.item())
+
+                    else:
+                        scan_losses.append(np.nan)
+                        scan_grads.append(np.nan)
+
+
+                    # store the scan outcome
+                    if run_no % save_freq == 0:
+                        recording = {'param' : param,
+                                     'param_vals': param_vals,
+                                     'norm_factor' : ranges[param]['nom'],
+                                     'target_val' : getattr(self.sim_target, param),
+                                     'losses' : scan_losses,
+                                     'grads' : scan_grads }
+
+                        outname = f"result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{run_no}"
+                        with open(outname+".pkl", "wb") as f:
+                            pickle.dump(recording, f)
+                        if os.path.exists(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{run_no-save_freq}.pkl'):
+                            os.remove(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{run_no-save_freq}.pkl')
+
+                    pbar.update(1)
+
+                recording = {'param' : param,
+                             'param_vals': param_vals,
+                             'norm_factor' : ranges[param]['nom'],
+                             'target_val' : getattr(self.sim_target, param),
+                             'losses' : scan_losses,
+                             'grads' : scan_grads }
+    
+                outname = f"result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}"
+                with open(outname+".pkl", "wb") as f:
+                    pickle.dump(recording, f)
+                if os.path.exists(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{len(param_vals)-save_freq}.pkl'):
+                    os.remove(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{len(param_vals)-save_freq}.pkl')
+
+            # average the loss and grad
+            all_scan_losses = []
+            all_scan_grads = []
+            for i in range(len(dataloader)):
+                #with open(f'loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}.pkl', 'rb') as pkl_file:
+                history = pickle.load(open(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}.pkl', "rb"))
+                all_scan_losses.append(np.array(history['losses']))
+                all_scan_grads.append(np.array(history['grads']))
+            scan_losses_mean = np.mean(np.array(all_scan_losses), axis=0)
+            scan_grads_mean = np.mean(np.array(all_scan_grads), axis=0)
+
+            recording = {'param' : param,
+                         'param_vals': param_vals,
+                         'norm_factor' : ranges[param]['nom'],
+                         'target_val' : getattr(self.sim_target, param),
+                         'losses' : scan_losses_mean,
+                         'grads' : scan_grads_mean }
+
+            outname = f"result_{param}/loss_scan_mean_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}"
+            with open(outname+".pkl", "wb") as f:
+                pickle.dump(recording, f)
+
+        return recording, outname
+
