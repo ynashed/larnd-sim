@@ -7,3 +7,9 @@ __pycache__
 *.virtual_documents
 docs/build
 *.pdf
+*.txt
+target*/
+*.yaml
+*.pkl
+*.ipynb
+*.png
