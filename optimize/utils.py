@@ -1,4 +1,3 @@
-from argparse import ArgumentError
 import numpy as np
 from numpy.lib import recfunctions as rfn
 import torch
@@ -126,7 +125,7 @@ def embed_adc_list(sim, adc_list, unique_pix, ticks_list):
 # taking any sim for the constant, e.g sim.tpc_borders
 def calc_loss(embed_out, embed_targ, sim=None, return_components = False, no_adc=False):
     if sim is None:
-        raise ArgumentError("Need to pass in sim for space match loss")
+        raise ValueError("Need to pass in sim for space match loss")
         
     # Unroll embedding
     x_out_nz, y_out_nz, z_out_nz, time_list_out_nz, adc_out_nz = embed_out
