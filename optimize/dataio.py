@@ -49,7 +49,7 @@ class TracksDataset(Dataset):
         # all fit with a sub-set of tracks
         fit_index = []
         fit_tracks = []
-        if ntrack >= len(index):
+        if ntrack >= len(index) or ntrack == -1:
             self.tracks = torch.nn.utils.rnn.pad_sequence(all_tracks, batch_first=True, padding_value = -99) 
             fit_index = index
         else:

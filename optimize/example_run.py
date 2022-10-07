@@ -39,9 +39,10 @@ def main(config):
                             readout_noise_target=(not config.no_noise) and (not config.no_noise_target),
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
                             out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val,
-                            fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn)
+                            fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn,
+                            no_adc=config.no_adc, loss_fn=config.loss_fn)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs, shuffle=config.data_shuffle, save_freq=config.save_freq)
+    param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=config.iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
     return 0, 'Fitting successful'
 
@@ -106,6 +107,12 @@ if __name__ == '__main__':
                         help="Turns on fitting of differences rather than direct fitting of values")
     parser.add_argument("--optimizer_fn", dest="optimizer_fn", default="Adam",
                         help="Choose optimizer function (here Adam vs SGD")
+    parser.add_argument("--no_adc", dest="no_adc", default=False, action="store_true",
+                        help="Don't include ADC in loss (e.g. for vdrift)")
+    parser.add_argument("--iterations", dest="iterations", default=None, type=int,
+                        help="Number of iterations to run. Overrides epochs.")
+    parser.add_argument("--loss_fn", dest="loss_fn", default=None,
+                        help="Loss function to use. Named options are SDTW and space_match.")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)

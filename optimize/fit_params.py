@@ -4,7 +4,7 @@ sys.path.insert(0, larndsim_dir)
 import shutil
 import pickle
 import numpy as np
-from .utils import get_id_map, all_sim, embed_adc_list, calc_loss
+from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
 from larndsim.sim_with_grad import sim_with_grad
 import torch
@@ -37,7 +37,7 @@ class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
                  lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
-                 out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam"):
+                 out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", no_adc=False):
 
         if optimizer_fn == "Adam":
             self.optimizer_fn = torch.optim.Adam
@@ -46,6 +46,8 @@ class ParamFitter:
         else:
             raise NotImplementedError("Only SGD and Adam supported")
         self.optimizer_fn_name = optimizer_fn
+
+        self.no_adc = no_adc
 
         self.out_label = out_label
         self.norm_scheme = norm_scheme
@@ -123,11 +125,33 @@ class ParamFitter:
         else:
             self.optimizer = optimizer
 
-        # Set up loss function -- can pass in directly, or sparse diff by default
-        if loss_fn is None:
+        # Set up loss function -- can pass in directly, or choose a named one
+        if loss_fn is None or loss_fn == "space_match":
             self.loss_fn = calc_loss
+            self.loss_fn_kw = { 
+                                'sim': self.sim_physics, 
+                                'return_components' : False,
+                                'no_adc' : self.no_adc 
+                              }
+            print("Using space match loss")
+        elif loss_fn == "SDTW":
+            self.loss_fn = calc_soft_dtw_loss
+            t_only = "vdrift" in self.relevant_params_list
+            adc_only = not t_only
+
+            self.loss_fn_kw = {
+                                'adc_only' : adc_only,
+                                't_only' : t_only,
+                                'gamma' : 1
+                              }
+            if t_only:
+                print("Using Soft DTW loss on t only")
+            else:
+                print("Using Soft DTW loss on ADC only")
         else:
             self.loss_fn = loss_fn
+            self.loss_fn_kw = {}
+            print("Using custom loss function")
 
         if is_continue:
             self.training_history = history
@@ -136,11 +160,13 @@ class ParamFitter:
             for param in self.relevant_params_list:
                 self.training_history[param] = []
                 self.training_history[param+"_grad"] = []
+                self.training_history[param+"_iter"] = []
 
                 self.training_history[param + '_target'] = []
                 self.training_history[param + '_lr'] = [lr_dict[param]]
 
             self.training_history['losses'] = []
+            self.training_history['losses_iter'] = []
             self.training_history['norm_scheme'] = self.norm_scheme
             self.training_history['fit_diffs'] = self.fit_diffs
             self.training_history['optimizer_fn_name'] = self.optimizer_fn_name 
@@ -160,7 +186,12 @@ class ParamFitter:
             setattr(self.sim_target, param, param_val)
 
             
-    def fit(self, dataloader, epochs=300, shuffle=False, save_freq=5, print_freq=1):
+    def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
+            save_freq=5, print_freq=1, save_freq_iter=10, print_freq_iter=1):
+        # If explicit number of iterations, scale epochs accordingly
+        if iterations is not None:
+            epochs = iterations // len(dataloader) + 1
+
         # make a folder for the pixel target
         if os.path.exists('target_' + self.out_label):
             shutil.rmtree('target_' + self.out_label, ignore_errors=True)
@@ -173,8 +204,14 @@ class ParamFitter:
                 self.training_history[param].append(getattr(self.sim_physics, param))
                 self.training_history[param+'_target'].append(getattr(self.sim_target, param))
 
+        if iterations is not None:
+            pbar_total = iterations
+        else:
+            pbar_total = len(dataloader) * epochs
+
         # The training loop
-        with tqdm(total=len(dataloader) * epochs) as pbar:
+        total_iter = 0
+        with tqdm(total=pbar_total) as pbar:
             for epoch in range(epochs):
 
                 # Losses for each batch -- used to compute epoch loss
@@ -227,7 +264,8 @@ class ParamFitter:
                         embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
 
                         # Calc loss between simulated and target + backprop
-                        loss = self.loss_fn(self.sim_physics, embed_output, embed_target)
+                        #loss = self.loss_fn(self.sim_physics, embed_output, embed_target, no_adc=self.no_adc)
+                        loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
 
                         # To be investigated -- sometimes we get nans. Avoid doing a step if so
                         if not loss.isnan():
@@ -256,11 +294,32 @@ class ParamFitter:
                                                                self.max_clip_norm_val)
                             self.optimizer.step()
                             losses_batch.append(loss_ev_mean.item())
+                            self.training_history['losses_iter'].append(loss_ev_mean.item())
+                            for param in self.relevant_params_list:
+                                self.training_history[param+"_iter"].append(normalize_param(getattr(self.sim_iter, param).item(), 
+                                                                                            param, scheme=self.norm_scheme, undo_norm=True))
 
+                            if iterations is not None:
+                                if total_iter % print_freq_iter == 0:
+                                    for param in self.relevant_params_list:
+                                        print(param, getattr(self.sim_physics,param).item())
+                                    
+                                if total_iter % save_freq_iter == 0:
+                                    with open(f'history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
+                                        pickle.dump(self.training_history, f_history)
+
+                                    if os.path.exists(f'history_{param}_iter{total_iter-save_freq_iter}_{self.out_label}.pkl'):
+                                        os.remove(f'history_{param}_iter{total_iter-save_freq_iter}_{self.out_label}.pkl') 
+
+                    total_iter += 1
                     pbar.update(1)
+                    
+                    if iterations is not None:
+                        if total_iter >= iterations:
+                            break
 
                 # Print out params at each epoch
-                if epoch % print_freq == 0:
+                if epoch % print_freq == 0 and iterations is None:
                     for param in self.relevant_params_list:
                         print(param, getattr(self.sim_physics,param).item())
 
@@ -272,7 +331,7 @@ class ParamFitter:
 
                 # Save history in pkl files
                 n_steps = len(self.training_history[param])
-                if n_steps % save_freq == 0:
+                if n_steps % save_freq == 0 and iterations is None:
                     with open(f'history_{param}_epoch{n_steps}_{self.out_label}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)
                     if os.path.exists(f'history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):

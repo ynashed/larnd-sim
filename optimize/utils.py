@@ -1,6 +1,8 @@
+from argparse import ArgumentError
 import numpy as np
 from numpy.lib import recfunctions as rfn
 import torch
+from soft_dtw_cuda import SoftDTW
 
 def torch_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)
@@ -122,7 +124,10 @@ def embed_adc_list(sim, adc_list, unique_pix, ticks_list):
 # target point (best match), then takes the mean across target points for the loss.
 # If guess == target, min L2 is 0 for all, so loss is 0
 # taking any sim for the constant, e.g sim.tpc_borders
-def calc_loss(sim, embed_out, embed_targ, return_components = False):
+def calc_loss(embed_out, embed_targ, sim=None, return_components = False, no_adc=False):
+    if sim is None:
+        raise ArgumentError("Need to pass in sim for space match loss")
+        
     # Unroll embedding
     x_out_nz, y_out_nz, z_out_nz, time_list_out_nz, adc_out_nz = embed_out
     x_targ_nz, y_targ_nz, z_targ_nz, time_list_targ_nz, adc_targ_nz = embed_targ
@@ -155,7 +160,36 @@ def calc_loss(sim, embed_out, embed_targ, return_components = False):
                 time_loss, 
                 adc_loss)
     else:
-        return torch.mean((x_loss/norm_x + y_loss/norm_y + time_loss/norm_time + adc_loss/norm_adc)[min_idxs])
+        if no_adc:
+            return torch.mean((x_loss/norm_x + y_loss/norm_y + time_loss/norm_time)[min_idxs])
+        else:
+            return torch.mean((x_loss/norm_x + y_loss/norm_y + time_loss/norm_time + adc_loss/norm_adc)[min_idxs])
+
+def _abs_dist_func(x, y):
+    """
+    Calculates the Euclidean distance between each element in x and y per timestep
+    """
+    n = x.size(1)
+    m = y.size(1)
+    d = x.size(2)
+    x = x.unsqueeze(2).expand(-1, n, m, d)
+    y = y.unsqueeze(1).expand(-1, n, m, d)
+    return torch.abs(x - y).sum(3)
+
+def calc_soft_dtw_loss(embed_out, embed_targ, adc_only=True, t_only=True, gamma=1):
+    # Unroll embedding
+    x_out_nz, y_out_nz, z_out_nz, time_list_out_nz, adc_out_nz = embed_out
+    x_targ_nz, y_targ_nz, z_targ_nz, time_list_targ_nz, adc_targ_nz = embed_targ
+
+    sdtw = SoftDTW(use_cuda=False, gamma=1, dist_func = _abs_dist_func)
+
+    if adc_only:
+        return sdtw(adc_out_nz[None, :, None], adc_targ_nz[None, :, None])
+    elif t_only:
+        return sdtw(time_list_out_nz[None, :, None], time_list_targ_nz[None, :, None])
+    else:
+        raise NotImplementedError("Soft DTW only implemented for ADC and t independently")
+
 
 def param_l2_reg(param, sim):
     sigma = (ranges[param]['up'] - ranges[param]['down'])/2.
