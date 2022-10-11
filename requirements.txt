@@ -1,5 +1,6 @@
 eagerpy
 numpy
+numba
 pytest
 sphinx-rtd-theme
 tqdm
