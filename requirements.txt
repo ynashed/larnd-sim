@@ -1,7 +1,6 @@
 eagerpy
 numpy
 pytest
-numba
 sphinx-rtd-theme
 tqdm
 fire
