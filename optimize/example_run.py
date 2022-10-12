@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import yaml
 import sys, os
 import traceback
 from torch.utils.data import DataLoader
@@ -8,8 +9,21 @@ from torch.utils.data import DataLoader
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
 
+def make_param_list(config):
+    if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
+        with open(config.param_list[0], 'r') as config_file:
+            config_dict = yaml.load(config_file, Loader=yaml.FullLoader)
+        for key in config_dict.keys():
+            print(f"Setting lr {config_dict[key]} for {key}")
+        param_list = config_dict
+    else:
+        param_list = config.param_list
+    return param_list
+
+
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed, random_ntrack=config.random_ntrack, track_zlen_sel=config.track_zlen_sel)
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed, random_ntrack=config.random_ntrack, 
+                            track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound)
     tracks_dataloader = DataLoader(dataset,
                                   shuffle=config.data_shuffle, 
                                   batch_size=config.batch_sz,
@@ -17,14 +31,18 @@ def main(config):
 
     # For readout noise: no_noise overrides if explicitly set to True. Otherwise, turn on noise
     # individually for target and guess
-    param_fit = ParamFitter(config.param_list, dataset.get_track_fields(),
+    param_list = make_param_list(config)
+    param_fit = ParamFitter(param_list, dataset.get_track_fields(),
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
                             load_checkpoint=config.load_checkpoint, lr=config.lr, 
                             readout_noise_target=(not config.no_noise) and (not config.no_noise_target),
-                            readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess))
-    param_fit.make_target_sim(seed=config.seed)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs, shuffle=config.data_shuffle, save_freq=config.save_freq)
+                            readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
+                            out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val,
+                            fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn,
+                            no_adc=config.no_adc, loss_fn=config.loss_fn)
+    param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
+    param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=config.iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
     return 0, 'Fitting successful'
 
@@ -75,7 +93,26 @@ if __name__ == '__main__':
                         help="Flag of whether sampling the tracks randomly or sequentially")
     parser.add_argument("--track_zlen_sel", dest="track_zlen_sel", default=30., type=float,
                         help="Track selection requirement on the z expansion (drift axis)")
-
+    parser.add_argument("--track_z_bound", dest="track_z_bound", default=28., type=float,
+                        help="Set z bound to keep healthy set of tracks")
+    parser.add_argument("--out_label", dest="out_label", default="",
+                        help="Label for output pkl file")
+    parser.add_argument("--fixed_range", dest="fixed_range", default=None, type=float,
+                        help="Construct target by sampling in a certain range (fraction of nominal)")
+    parser.add_argument("--norm_scheme", dest="norm_scheme", default="divide",
+                        help="Normalization scheme to use for params. Right now, divide (by nom) and standard (subtract mean, div by variance)")
+    parser.add_argument("--max_clip_norm_val", dest="max_clip_norm_val", default=None, type=float,
+                        help="If passed, does gradient clipping (norm)")
+    parser.add_argument("--fit_diffs", dest="fit_diffs", default=False, action="store_true",
+                        help="Turns on fitting of differences rather than direct fitting of values")
+    parser.add_argument("--optimizer_fn", dest="optimizer_fn", default="Adam",
+                        help="Choose optimizer function (here Adam vs SGD")
+    parser.add_argument("--no_adc", dest="no_adc", default=False, action="store_true",
+                        help="Don't include ADC in loss (e.g. for vdrift)")
+    parser.add_argument("--iterations", dest="iterations", default=None, type=int,
+                        help="Number of iterations to run. Overrides epochs.")
+    parser.add_argument("--loss_fn", dest="loss_fn", default=None,
+                        help="Loss function to use. Named options are SDTW and space_match.")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
