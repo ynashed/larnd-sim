@@ -5,106 +5,63 @@
 
 <img alt="larnd-sim" src="docs/logo.png" height="160">
 
-This software aims to simulate a pixelated Liquid Argon Time Projection Chamber. It consists of a set of highly-parallelized algorithms implemented on the CUDA architecture.
+This software aims to simulate a pixelated Liquid Argon Time Projection Chamber. This is a _differentiable_ version of a snapshot of 
+[DUNE larnd-sim](https://github.com/DUNE/larnd-sim), and is (as closely as possible), a direct translation of that code. Rather 
+than relying on explicit CUDA kernel parallelization, this code has been (a) vectorized and (b) translated into [EagerPy](https://github.com/jonasrauber/eagerpy), 
+a backend agnostic framework allowing for the use of a variety of automatic differentiation libraries. The optimization code here is written in 
+[PyTorch](https://pytorch.org/), and there are a few residual native PyTorch functions used throughout the main code.
 
-## Overview
+For comparison, files from the non-differentiable version of larnd-sim have been kept, with the translated software denoted with a subscript 
+`_ep` (e.g. `quenching.py` -> `quenching_ep.py`). Note that it is possible to run on both GPU and CPU with this code, with GPU offering 
+considerable speed-ups due to the vectorization. However, because of the vectorization, the memory use is fairly high -- typical runs are 
+done on the SLAC Shared Scientific Data Facility (SDF) using single NVIDIA Tesla A100s with 40GB of VRAM.
 
-The framework takes as input a 2D array containing the necessary information for each simulated segment in the detector (e.g. starting point, energy deposition) and produces a simulated electronics signal for each affected pixel.
-It is divided into two main parts: the first one simulates the drifting of the tracks in the detector and the quenching of the deposited charge, and the second one simulates the electronics response of the pixels placed at the anode.
-A full example is available in `examples/Pixel induced current.ipynb`.
+## Physics overview
+Following the structure of the non-differentiable code, the simulation proceeds in stages, which can be seen in the structure 
+of the `all_sim` function in `optimize/utils.py`. These stages are
+- Quenching: contained in `quenching_ep.py`. 
+- Drifting: contained in `drifting_ep.py`.
+- Pixelization: contained in `pixels_from_track_ep.py`
+- Charge/current calculation: contained in `detsim_ep.py`
+- Electronics simulation: contained in `fee_ep.py`.
 
-## How to run a simulation
+## What does differentiable mean?
+Let's think of our simulator as some function $f(x,\theta)$ which maps from dEdx track segments ($x$) to the corresponding 
+pixel readout $f(x)$, where $\theta$ are some set of parameters of the simulation. We call this function $f$ our ``forward model''. 
+If this model is differentiable, this means that we can calculate $\nabla_{\theta} f(x, \theta)$ (and/or $\nabla_{x} f(x, \theta)$), 
+the gradient of our forward model output with respect to its parameters, $\theta$, or inputs, $x$.
 
-### Input dataset
+Doing such a calculation is made very efficient by a tool called _automatic differentiation_, the backbone of frameworks such as 
+PyTorch. Full discussion of automatic differentiation is beyond the scope of this README. For the optimization here, we use 
+_reverse mode automatic differentiation_, also known as backpropagation, which effectively uses the chain rule moving backward 
+from the output of the forward model in order to exactly compute the desired derivatives.
 
-The simulation of the pixel response takes as input a bi-dimensional `numpy` array containing the information for each track segment that deposited energy in the TPC. The indeces that correspond to each track segment attribute are specified in `larndsim/indeces.py`.
+It is important to note that not all operations in the standard larnd-sim are nicely differentiable, for instance discontinuous integer 
+operations, thresholding, etc etc. In several places, we therefore do a _relaxation_ of these operations. A common example is to take a 
+hard, step function cut, and replace it with a sigmoid function, which has similar behavior on the tails, but replaces a discontinuous jump 
+with a smooth rise to terminal values (e.g. from 0 to 1). Such relaxations allow for the calculation of gradients, at the price of the accuracy 
+of the simulation. We include a few such relaxations in the differentiable simulation code, notably:
+- Interpolation between time steps in integrated current thresholding
+- Relaxation of current model shape (truncated exponential)
+- Integer ADC values -> floating point
 
-### Quenching and drifting stage
+Once we do have reasonable gradients, however, this opens up several possibilities. One of the major focuses of this work is the idea of 
+_calibration_. This particularly focuses on the use of gradients with respect to parameters, $\nabla_{\theta} f(x, \theta)$. The general 
+setup is:
+- Take some data, which we assume to be from $f(x^{*}, \theta^{*})$, with $x^{*}$, $\theta^{*}$ the ``true'' values seen in real life.
+- Assuming we know (or can estimate) $x^{*}$, simulate some data with a set of parameters $\theta_{i}$.
+- Compare the simulation output $f(x^{*}, \theta_{i})$, with data $f(x^{*}, \theta^{*})$ using some _loss function_
+- Update parameters $\theta_{i}$ via gradient descent to minimize the chosen loss, i.e.,
+\begin{equation}
+\theta_{i} \rightarrow \theta_{i} - \eta\cdot\nabla_{\theta} f(x^{*}, \theta_{i})
+\end{equation}
+where $\eta$ is some _learning rate_ that controls how big of a step we take. This procedure (falling into an ``analysis-by-synthesis'' framework)
+can be repeated until convergence is reached.
 
-The particles that interact in the TPC ionize the argon atoms. Some of the resulting electrons will immediately recombine with the atoms. This effect is simulated in the `quenching` module.
+Note that this is one particular application -- reconstruction of inputs (via a similar procedure with $\nabla_{x} f(x, \theta)$) is a very related 
+process. However the differentiability also allows for training of neural networks in conjunction with physics simulation (as gradients with respect 
+to neural network weights and biases may be passed all the way through). TL; DR, this can be useful!
 
-The remaining electrons travel towards the anode and their spatial distribution is affected by longitudinal and transverse diffusion. The presence of impurities reduces the amount of electrons that reach the anode. These effects are simulated in the `drifting` module.
+## Code overview and how to run a fit
 
-These two modules modify in place the input array.
 
-```python
-from larndsim import quenching, drifting
-
-threadsperblock = 256
-blockspergrid = ceil(tracks.shape[0] / threadsperblock)
-quenching.quench[blockspergrid,threadsperblock](segments, consts.box)
-drifting.drift[blockspergrid,threadsperblock](segments)
-```
-
-### Pixel simulation stage
-
-Once we have calculated the number and the position of the electrons reaching the anode, we can calculate the current induced on each pixel.
-First, we find the pixels interesected by the projection of each track segment on the anode plane using the [Bresenham's line algorithm](https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm) implented in the `pixels_from_track` module. Due to diffusion, we consider also the neighboring pixels.
-
-```python
-from larndsim import pixels_from_track
-...
-pixels_from_track.get_pixels[blockspergrid,threadsperblock](segments, 
-                                                            active_pixels, 
-                                                            neighboring_pixels, 
-                                                            n_pixels_list,
-                                                            radius)
-```
-
-Finally, we calculate the current induced on each pixel using the `tracks_current` function in the `detsim` module. The induced current is stored in the `signals` array, which is a three-dimensional array, where the dimensions correspond to the track segment, the pixel, and the time tick, respectively: `signals[0][1][2]` will contain the current induced by the track `0`, for the pixel `1`, at the time tick `2`.
-
-```python
-from larndsim import detsim
-...
-detsim.tracks_current[blockspergrid,threadsperblock](signals,
-                                                     neighboring_pixels,
-                                                     segments)
-```
-
-### Accessing the signals
-
-The three-dimensional array can contain more than one signal for each pixel at different times. If we want to plot the full induced signal on the pixel, we need to join the signals corresponding to the same pixel. First, we find the start time of each signal with `time_intervals`:
-
-```python
-from larndsim import detsim
-...
-detsim.time_intervals[blockspergrid,threadsperblock](track_starts,
-                                                     max_length,
-                                                     event_id_map,
-                                                     segments)
-```
-
-Thus, we join them using `sum_pixel_signals`:
-
-```python
-from larndsim import detsim
-...
-detsim.sum_pixel_signals[blockspergrid,threadsperblock](pixels_signals, 
-                                                        signals, 
-                                                        track_starts, 
-                                                        pixel_index_map)
-```
-
-### Electronics simulation
-
-Once we have the induced current for each active pixel in the detector we can apply our electronics simulation, which will calculate the ADC values for each pixel:
-
-```python
-from larndsim import fee
-from numba.cuda.random import create_xoroshiro128p_states
-...
-
-rng_states = create_xoroshiro128p_states(TPB * BPG, seed=0)
-fee.get_adc_values[BPG,TPB](pixels_signals, 
-                            time_ticks, 
-                            integral_list, 
-                            adc_ticks_list,
-                            0,
-                            rng_states)
-```
-
-where the random states `rng_states` are neede for the noise simulation.
-The final output can be exported to the [LArPix HDF5 format](https://larpix-control.readthedocs.io/en/stable/api/format/hdf5format.html):
-```python
-fee.export_to_hdf5(adc_list, adc_ticks_list, unique_pix, "example.h5")
-```
