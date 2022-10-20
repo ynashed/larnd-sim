@@ -26,9 +26,9 @@ of the `all_sim` function in `optimize/utils.py`. These stages are
 - Electronics simulation: contained in `fee_ep.py`.
 
 ## What does differentiable mean?
-Let's think of our simulator as some function $f(x,\theta)$ which maps from dEdx track segments ($x$) to the corresponding 
+Let's think of our simulator as some function $f(x,\theta)$ which maps from dEdx track segments, $x$, to the corresponding 
 pixel readout $f(x)$, where $\theta$ are some set of parameters of the simulation. We call this function $f$ our "forward model". 
-If this model is differentiable, this means that we can calculate $\nabla_{\theta} f(x, \theta)$ (and/or $\nabla_{x} f(x, \theta)$), 
+If this model is differentiable, this means that we can calculate $\nabla_{\theta} f(x, \theta)$ and/or $\nabla_{x} f(x, \theta)$, 
 the gradient of our forward model output with respect to its parameters, $\theta$, or inputs, $x$.
 
 Doing such a calculation is made very efficient by a tool called _automatic differentiation_, the backbone of frameworks such as 
@@ -48,17 +48,15 @@ of the simulation. We include a few such relaxations in the differentiable simul
 Once we do have reasonable gradients, however, this opens up several possibilities. One of the major focuses of this work is the idea of 
 _calibration_. This particularly focuses on the use of gradients with respect to parameters, $\nabla_{\theta} f(x, \theta)$. The general 
 setup is:
-- Take some data, which we assume to be from $f(x^{\\*}, \theta^{\\*})$, with $x^{\\*}$, $\theta^{\\*}$ the "true" values seen in real life.
-- Assuming we know (or can estimate) $x^{\\*}$, simulate some data with a set of parameters $\theta_{i}$.
-- Compare the simulation output $f(x^{\\*}, \theta_{i})$, with data $f(x^{\\*}, \theta^{\\*})$ using some _loss function_
+- Take some data, which we assume to be from $f(x^\*, \theta^\*)$, with $x^\*$, $\theta^\*$ the "true" values seen in real life.
+- Assuming we know (or can estimate) $x^\*$, simulate some data with a set of parameters $\theta_{i}$.
+- Compare the simulation output $f(x^\*, \theta_{i})$, with data $f(x^\*, \theta^\*)$ using some _loss function_
 - Update parameters $\theta_{i}$ via gradient descent to minimize the chosen loss, i.e.,
-$$
-\theta_{i} \rightarrow \theta_{i} - \eta\cdot\nabla_{\theta} f(x^{\\*}, \theta_{i})
-$$
+$$\theta_{i} \rightarrow \theta_{i} - \eta\cdot\nabla_{\theta} f(x^\*, \theta_{i})$$
 where $\eta$ is some _learning rate_ that controls how big of a step we take. This procedure (falling into an "analysis-by-synthesis" framework)
 can be repeated until convergence is reached.
 
-Note that this is one particular application -- reconstruction of inputs (via a similar procedure with $\nabla_{x} f(x, \theta)$) is a very related 
+Note that this is one particular application -- reconstruction of inputs, via a similar procedure with $\nabla_{x} f(x, \theta)$, is a very related 
 process. However the differentiability also allows for training of neural networks in conjunction with physics simulation (as gradients with respect 
 to neural network weights and biases may be passed all the way through). TL; DR, this can be useful!
 
