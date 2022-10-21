@@ -60,6 +60,36 @@ Note that this is one particular application -- reconstruction of inputs, via a 
 process. However the differentiability also allows for training of neural networks in conjunction with physics simulation (as gradients with respect 
 to neural network weights and biases may be passed all the way through). TL; DR, this can be useful!
 
-## Code overview and how to run a fit
+## Fitting code overview
+Most of the physics code is in `larndsim/`, while the optimization code is in `optimize/`. For the following, we assume that you have access to SLAC's 
+SDF (so that you can use the corresponding resources and file paths). The heart of the user interface is the file `optimize/example_run.py`, 
+which makes use of the `ParamFitter` class defined in `optimize/fit_params.py`, as well as the data handling of `optimize/dataio.py`. 
 
+An image containing all required packages is located at:
+`/sdf/group/neutrino/images/larndsim_latest.sif`
+
+And we've been using a set of simulated muon data for tests:
+`/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5`
+
+This fitting framework is set up by default to run a "closure test" style fit. Namely, we:
+- Simulate some "data" with a given set of parameters. This is the "target data".
+- Initialize at some reasonable guess. For us, this is often a set of nominal parameter values.
+- Run the gradient descent optimization procedure to update parameter guesses (starting from the initial value).
+
+The goal of this closure test is to see if we can recover the target parameter values in an "ideal" case. To that 
+end we've included a flag to turn off electronic noise (the only source of stochasticity in the detector simulation).
+
+The simplest way to run your first fit is using an included batch script at `optimize/scripts/example_submit.sh`. Namely, 
+on SDF, run:
+```
+sbatch optimize/scripts/example_submit.sh
+```
+from the top level `larnd-sim` directory.
+
+This spawns 5 jobs with different randomly seeded targets within "reasonable" parameter ranges defined in `optimize/ranges.py`. 
+It runs a fit to these targets on a set of 5 tracks in a single batch, using an Adam optimizer and soft DTW loss. This may take 
+a bit to run.
+
+As the jobs run, they store a bunch of information in a dict, saved in a pkl file -- this can then be used to plot/analyze results, e.g.
+to make something like this plot: (to do, include)
 
