@@ -19,11 +19,15 @@ done on the SLAC Shared Scientific Data Facility (SDF) using single NVIDIA Tesla
 ## Physics overview
 Following the structure of the non-differentiable code, the simulation proceeds in stages, which can be seen in the structure 
 of the `all_sim` function in `optimize/utils.py`. These stages are
-- Quenching: contained in `quenching_ep.py`. 
-- Drifting: contained in `drifting_ep.py`.
-- Pixelization: contained in `pixels_from_track_ep.py`
-- Charge/current calculation: contained in `detsim_ep.py`
-- Electronics simulation: contained in `fee_ep.py`.
+- Quenching: contained in `quenching_ep.py`. Goes from energy deposits to number of electrons (after recombination). Uses Birks model 
+for this calculation by default. Parameters: `Ab`, `kb`, `eField`.
+- Drifting: contained in `drifting_ep.py`. Calculates properties of segments at the anode, after drifting through the detector. 
+Parameters: `vdrift`, `tran_diff`, `long_diff`, `lifetime`.
+- Pixelization: contained in `pixels_from_track_ep.py`. Finds pixel projection of tracks (Bresenham's line algorithm). `tran_diff` implicitly 
+enters in determining max spread.
+- Charge/current calculation: contained in `detsim_ep.py`. Calculates current induced on each pixel. Almost all parameters enter somewhere either 
+implicitly or explicitly.  
+- Electronics simulation: contained in `fee_ep.py`. Simulates electronics/triggering/converts current to ADC counts. This is where "noise" can enter.
 
 ## What does differentiable mean?
 Let's think of our simulator as some function $f(x,\theta)$ which maps from dEdx track segments, $x$, to the corresponding 
@@ -57,7 +61,7 @@ where $\eta$ is some _learning rate_ that controls how big of a step we take. Th
 can be repeated until convergence is reached.
 
 Note that this is one particular application -- reconstruction of inputs, via a similar procedure with $\nabla_{x} f(x, \theta)$, is a very related 
-process. However the differentiability also allows for training of neural networks in conjunction with physics simulation (as gradients with respect 
+process. Further, the differentiability also allows for training of neural networks in conjunction with physics simulation (as gradients with respect 
 to neural network weights and biases may be passed all the way through). TL; DR, this can be useful!
 
 ## Fitting code overview
@@ -87,9 +91,34 @@ sbatch optimize/scripts/example_submit.sh
 from the top level `larnd-sim` directory.
 
 This spawns 5 jobs with different randomly seeded targets within "reasonable" parameter ranges defined in `optimize/ranges.py`. 
-It runs a fit to these targets on a set of 5 tracks in a single batch, using an Adam optimizer and soft DTW loss. This may take 
-a bit to run.
+It runs a fit to these targets on a set of 5 tracks in a single batch, using an Adam optimizer and [soft DTW](https://arxiv.org/abs/1703.01541) 
+loss. This may take a bit to run. Note that this uses the `ml` partition and a single NVIDIA Tesla A100 for each job -- if you're not a member 
+of the `ml` partition, you may need to change to something else (`shared`, e.g.).
 
 As the jobs run, they store a bunch of information in a dict, saved in a pkl file -- this can then be used to plot/analyze results, e.g.
 to make something like this plot: (to do, include)
 
+The parameters of interest for fitting are (currently), in rough priority order:
+- Ab
+- kb
+- tran_diff
+- vdrift
+- lifetime
+- eField
+- long_diff
+
+Note that vdrift is "special" in that the dominant impact is in time info (and it has by far the largest effect there), so this is used 
+explicitly in the fitting.
+
+The example we had you run does a fit for a single parameter (Ab) on a limited set of tracks. Multiparameter fitting is possible by passing 
+either:
+- A space separated list of parameters (one learning rate used for all)
+- A `.yaml` file defining the list of parameters and their associated learning rates, e.g.,
+
+``` yaml
+Ab: 1e-2
+kb: 1e-1
+```
+will run a simultaneous (2D) fit in `Ab` and `kb` with learning rates 1e-2 and 1e-1 respectively.
+
+There are several other configuration flags, please see the included help text for more information on those. 
