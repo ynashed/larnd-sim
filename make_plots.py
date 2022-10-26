@@ -31,6 +31,7 @@ def main(config):
         plt.xlabel('Training Iteration')
         plt.tight_layout()
         plt.savefig(f'plot_{param}_{config.label}.pdf')
+        print(f"Saving plot to plot_{param}_{config.label}.pdf")
         plt.close()
 
 if __name__ == '__main__':
