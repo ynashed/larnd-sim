@@ -30,8 +30,8 @@ def main(config):
         plt.ylabel(labels[param])
         plt.xlabel('Training Iteration')
         plt.tight_layout()
-        plt.savefig(f'plot_{param}_{config.label}.pdf')
-        print(f"Saving plot to plot_{param}_{config.label}.pdf")
+        plt.savefig(f'plot_{param}_{config.label}.{config.ext}', dpi=300)
+        print(f"Saving plot to plot_{param}_{config.label}.{config.ext}")
         plt.close()
 
 if __name__ == '__main__':
@@ -42,6 +42,8 @@ if __name__ == '__main__':
                         help="Label of pkl file.") 
     parser.add_argument("--seeds", dest="seeds", default=[], nargs="+",
                         help="List of target seeds to plot.") 
+    parser.add_argument("--ext", dest="ext", default="pdf",
+                        help="Image extension (e.g., pdf or png)") 
 
     args = parser.parse_args()
     main(args)
