@@ -96,7 +96,17 @@ loss. This may take a bit to run. Note that this uses the `ml` partition and a s
 of the `ml` partition, you may need to change to something else (`shared`, e.g.).
 
 As the jobs run, they store a bunch of information in a dict, saved in a pkl file -- this can then be used to plot/analyze results, e.g.
-to make something like this plot: (to do, include)
+to make something like this plot: 
+
+<img alt="example fit" src="figures/plot_Ab_Ab_SDTW_lr1e-2_5trk_test.png" height="500">
+
+Which was made with a very very simple plotting script
+``` bash
+python make_plots.py --params Ab --label Ab_SDTW_lr1e-2_5trk_test --seeds 1 2 3 4 5 --ext png
+```
+
+You might notice this looks quite wiggly -- this is often a sign of the learning rate being too high.  This can be tuned with the `--lr` flag -- 
+try it yourself!
 
 The parameters of interest for fitting are (currently), in rough priority order:
 - Ab
