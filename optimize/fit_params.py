@@ -203,6 +203,8 @@ class ParamFitter:
             if len(self.training_history[param]) == 0:
                 self.training_history[param].append(getattr(self.sim_physics, param))
                 self.training_history[param+'_target'].append(getattr(self.sim_target, param))
+            if len(self.training_history[param+"_iter"]) == 0:
+                self.training_history[param+"_iter"].append(getattr(self.sim_physics, param))
 
         if iterations is not None:
             pbar_total = iterations
