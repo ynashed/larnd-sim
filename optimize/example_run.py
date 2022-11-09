@@ -23,10 +23,16 @@ def make_param_list(config):
 
 def main(config):
     dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed, random_ntrack=config.random_ntrack, 
-                            track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound)
+                            track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len)
+
+    batch_sz = config.batch_sz
+    if config.max_batch_len is not None and batch_sz != 1:
+        print("Need batch size == 1 for splitting in dx chunks. Setting now...")
+        batch_sz = 1
+
     tracks_dataloader = DataLoader(dataset,
                                   shuffle=config.data_shuffle, 
-                                  batch_size=config.batch_sz,
+                                  batch_size=batch_sz,
                                   pin_memory=True, num_workers=config.num_workers)
 
     # For readout noise: no_noise overrides if explicitly set to True. Otherwise, turn on noise
@@ -113,6 +119,8 @@ if __name__ == '__main__':
                         help="Number of iterations to run. Overrides epochs.")
     parser.add_argument("--loss_fn", dest="loss_fn", default=None,
                         help="Loss function to use. Named options are SDTW and space_match.")
+    parser.add_argument("--max_batch_len", dest="max_batch_len", default=None,
+                        help="Max dx per batch. If passed, will add tracks to batch until overflow, splitting where needed")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
