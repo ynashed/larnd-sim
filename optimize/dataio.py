@@ -13,7 +13,7 @@ def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
 class TracksDataset(Dataset):
-    def __init__(self, filename, ntrack, swap_xz=True, seed=3, random_ntrack=False, track_zlen_sel=0., 
+    def __init__(self, filename, ntrack, swap_xz=True, seed=3, random_ntrack=False, track_zlen_sel=2., 
                  track_z_bound=28., max_batch_len=None):
 
         with h5py.File(filename, 'r') as f:

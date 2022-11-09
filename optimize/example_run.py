@@ -97,7 +97,7 @@ if __name__ == '__main__':
                         help="Save frequency of the result")
     parser.add_argument("--random_ntrack", dest="random_ntrack", default=False, action="store_true",
                         help="Flag of whether sampling the tracks randomly or sequentially")
-    parser.add_argument("--track_zlen_sel", dest="track_zlen_sel", default=30., type=float,
+    parser.add_argument("--track_zlen_sel", dest="track_zlen_sel", default=2., type=float,
                         help="Track selection requirement on the z expansion (drift axis)")
     parser.add_argument("--track_z_bound", dest="track_z_bound", default=28., type=float,
                         help="Set z bound to keep healthy set of tracks")
