@@ -119,8 +119,8 @@ if __name__ == '__main__':
                         help="Number of iterations to run. Overrides epochs.")
     parser.add_argument("--loss_fn", dest="loss_fn", default=None,
                         help="Loss function to use. Named options are SDTW and space_match.")
-    parser.add_argument("--max_batch_len", dest="max_batch_len", default=None,
-                        help="Max dx per batch. If passed, will add tracks to batch until overflow, splitting where needed")
+    parser.add_argument("--max_batch_len", dest="max_batch_len", default=None, type=float,
+                        help="Max dx [cm] per batch. If passed, will add tracks to batch until overflow, splitting where needed")
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
