@@ -75,7 +75,7 @@ if __name__ == '__main__':
                         help='The number of worker threads to use for the dataloader.')
     parser.add_argument("--lr", dest="lr", default=1e1, type=float,
                         help="Learning rate -- used for all params")
-    parser.add_argument("--batch_sz", dest="batch_sz", default=2, type=int,
+    parser.add_argument("--batch_sz", dest="batch_sz", default=1, type=int,
                         help="Batch size for fitting (tracks).")
     parser.add_argument("--epochs", dest="epochs", default=100, type=int,
                         help="Number of epochs")
@@ -84,7 +84,7 @@ if __name__ == '__main__':
     parser.add_argument("--data_seed", dest="data_seed", default=3, type=int,
                         help="Random seed for data picking if not using the whole set")
     parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
-                        help="data size for fitting (number of tracks)")
+                        help="Data size for fitting (number of tracks); input negative values to run on the whole dataset")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
                         help="Flag to turn off readout noise (both target and guess)")
     parser.add_argument("--no-noise-target", dest="no_noise_target", default=False, action="store_true",

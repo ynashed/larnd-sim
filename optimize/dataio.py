@@ -50,7 +50,9 @@ class TracksDataset(Dataset):
         # all fit with a sub-set of tracks
         fit_index = []
         fit_tracks = []
-        if ntrack >= len(index) or ntrack == -1:
+        if ntrack >= len(index) or ntrack < 0:
+            if random_ntrack:
+                random.shuffle(all_tracks)
             fit_tracks = all_tracks
             fit_index = index
         else:
@@ -89,7 +91,8 @@ class TracksDataset(Dataset):
 
         self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = -99) 
 
-        print("training set [ev, trk]: ", fit_index)
+        if ntrack < 200 and ntrack > 0:
+            print("training set [ev, trk]: ", fit_index)
 
     def __len__(self):
         return len(self.tracks)
