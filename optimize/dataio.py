@@ -13,7 +13,7 @@ def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
 class TracksDataset(Dataset):
-    def __init__(self, filename, ntrack, swap_xz=True, seed=3, random_ntrack=False, track_zlen_sel=2., 
+    def __init__(self, filename, ntrack, max_nbatch, swap_xz=True, seed=3, random_ntrack=False, track_zlen_sel=2., 
                  track_z_bound=28., max_batch_len=None):
 
         with h5py.File(filename, 'r') as f:
@@ -67,27 +67,44 @@ class TracksDataset(Dataset):
             for i_rand in list_rand:
                 fit_index.append(index[i_rand])
                 fit_tracks.append(all_tracks[i_rand])
-        
+        print("training set [ev, trk]: ", fit_index)
+       
         if max_batch_len is not None:
             batches = []
             batch_here = []
             tot_length = 0
+            tot_data_length = 0
+            done_track_looping = False
             for track in fit_tracks:
                 for segment in track:
+                    if segment[self.track_fields.index("dx")] > max_batch_len:
+                        continue
                     tot_length+=segment[self.track_fields.index("dx")]
                     if tot_length < max_batch_len:
                         batch_here.append(segment)
                     else:
-                        batches.append(torch.stack(batch_here))
+                        if len(batch_here) > 0:
+                            batches.append(torch.stack(batch_here))
+                            tot_data_length += tot_length - segment[self.track_fields.index("dx")]
+                            print("batch length: ", tot_length - segment[self.track_fields.index("dx")])
                         batch_here = []
                         tot_length = 0
-
+                        if len(batches) >= max_nbatch: 
+                            done_track_looping = True
+                            break
                         batch_here.append(segment)
                         tot_length+=segment[self.track_fields.index("dx")]
+                if done_track_looping:
+                    break
             if len(batch_here) > 0:
                 batches.append(torch.stack(batch_here))
+                tot_data_length += tot_length
             
             fit_tracks = batches
+
+            print(f"The used data includes total track length of {tot_data_length} cm.")
+            print(f"The maximum batch track length is {max_batch_len} cm.")
+            print(f"There are {len(batches)} different batches in total.")
 
         self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = -99) 
 

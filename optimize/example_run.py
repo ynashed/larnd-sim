@@ -22,7 +22,7 @@ def make_param_list(config):
 
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed, random_ntrack=config.random_ntrack, 
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=config.max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
                             track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len)
 
     batch_sz = config.batch_sz
@@ -83,7 +83,7 @@ if __name__ == '__main__':
                         help="Random seed for target construction")
     parser.add_argument("--data_seed", dest="data_seed", default=3, type=int,
                         help="Random seed for data picking if not using the whole set")
-    parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
+    parser.add_argument("--data_sz", dest="data_sz", default=-1, type=int,
                         help="Data size for fitting (number of tracks); input negative values to run on the whole dataset")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
                         help="Flag to turn off readout noise (both target and guess)")
@@ -121,6 +121,9 @@ if __name__ == '__main__':
                         help="Loss function to use. Named options are SDTW and space_match.")
     parser.add_argument("--max_batch_len", dest="max_batch_len", default=None, type=float,
                         help="Max dx [cm] per batch. If passed, will add tracks to batch until overflow, splitting where needed")
+    parser.add_argument("--max_nbatch", dest="max_nbatch", default=1, type=int,
+                        help="Upper number of different batches taken from the data, given the max_batch_len. Overrides data_sz.")
+
     try:
         args = parser.parse_args()
         retval, status_message = main(args)
