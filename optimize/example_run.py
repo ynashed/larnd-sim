@@ -22,7 +22,7 @@ def make_param_list(config):
 
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=config.max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=config.max_nbatch, iterations=config.iterations, seed=config.data_seed, random_ntrack=config.random_ntrack, 
                             track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len)
 
     batch_sz = config.batch_sz
@@ -93,7 +93,7 @@ if __name__ == '__main__':
                         help="Flag to turn off readout noise (just guess, target has noise)")
     parser.add_argument("--data_shuffle", dest="data_shuffle", default=False, action="store_true",
                         help="Flag of data shuffling")
-    parser.add_argument("--save_freq", dest="save_freq", default=5, type=int,
+    parser.add_argument("--save_freq", dest="save_freq", default=10, type=int,
                         help="Save frequency of the result")
     parser.add_argument("--random_ntrack", dest="random_ntrack", default=False, action="store_true",
                         help="Flag of whether sampling the tracks randomly or sequentially")
