@@ -13,7 +13,7 @@ def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
 class TracksDataset(Dataset):
-    def __init__(self, filename, ntrack, max_nbatch, swap_xz=True, seed=3, random_ntrack=False, track_zlen_sel=2., 
+    def __init__(self, filename, ntrack, max_nbatch, iterations, swap_xz=True, seed=3, random_ntrack=False, track_zlen_sel=2., 
                  track_z_bound=28., max_batch_len=None):
 
         with h5py.File(filename, 'r') as f:
@@ -67,8 +67,10 @@ class TracksDataset(Dataset):
             for i_rand in list_rand:
                 fit_index.append(index[i_rand])
                 fit_tracks.append(all_tracks[i_rand])
-        print("training set [ev, trk]: ", fit_index)
-       
+      
+        if iterations is not None and iterations<max_nbatch or max_nbatch<0: 
+            max_nbatch = iterations
+
         if max_batch_len is not None:
             batches = []
             batch_here = []
@@ -89,7 +91,7 @@ class TracksDataset(Dataset):
                             print("batch length: ", tot_length - segment[self.track_fields.index("dx")])
                         batch_here = []
                         tot_length = 0
-                        if len(batches) >= max_nbatch: 
+                        if len(batches) >= max_nbatch and max_nbatch > 0: 
                             done_track_looping = True
                             break
                         batch_here.append(segment)

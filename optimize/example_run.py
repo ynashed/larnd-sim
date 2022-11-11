@@ -121,7 +121,7 @@ if __name__ == '__main__':
                         help="Loss function to use. Named options are SDTW and space_match.")
     parser.add_argument("--max_batch_len", dest="max_batch_len", default=None, type=float,
                         help="Max dx [cm] per batch. If passed, will add tracks to batch until overflow, splitting where needed")
-    parser.add_argument("--max_nbatch", dest="max_nbatch", default=1, type=int,
+    parser.add_argument("--max_nbatch", dest="max_nbatch", default=-1, type=int,
                         help="Upper number of different batches taken from the data, given the max_batch_len. Overrides data_sz.")
 
     try:
