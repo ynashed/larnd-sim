@@ -26,8 +26,9 @@ def main(config):
     iterations = config.iterations
     max_nbatch = config.max_nbatch
 
-    if iterations is not None and iterations<max_nbatch or max_nbatch<0:
-        max_nbatch = iterations
+    if iterations is not None:
+        if max_nbatch is None or iterations < max_nbatch or max_nbatch < 0:
+            max_nbatch = iterations
 
     dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
                             track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input)
@@ -130,6 +131,8 @@ if __name__ == '__main__':
                         help="Max dx [cm] per batch. If passed, will add tracks to batch until overflow, splitting where needed")
     parser.add_argument("--max_nbatch", dest="max_nbatch", default=None, type=int,
                         help="Upper number of different batches taken from the data, given the max_batch_len. Overrides data_sz.")
+    parser.add_argument("--print_input", dest="print_input", default=False, action="store_true",
+                        help="print the evnet and track id per batch.")
 
     try:
         args = parser.parse_args()
