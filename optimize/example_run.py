@@ -31,7 +31,7 @@ def main(config):
             max_nbatch = iterations
 
     dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
-                            track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input)
+                            track_len_sel=config.track_len_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input)
 
     batch_sz = config.batch_sz
     if config.max_batch_len is not None and batch_sz != 1:
@@ -105,8 +105,8 @@ if __name__ == '__main__':
                         help="Save frequency of the result")
     parser.add_argument("--random_ntrack", dest="random_ntrack", default=False, action="store_true",
                         help="Flag of whether sampling the tracks randomly or sequentially")
-    parser.add_argument("--track_zlen_sel", dest="track_zlen_sel", default=2., type=float,
-                        help="Track selection requirement on the z expansion (drift axis)")
+    parser.add_argument("--track_len_sel", dest="track_len_sel", default=2., type=float,
+                        help="Track selection requirement on track length.")
     parser.add_argument("--track_z_bound", dest="track_z_bound", default=28., type=float,
                         help="Set z bound to keep healthy set of tracks")
     parser.add_argument("--out_label", dest="out_label", default="",
