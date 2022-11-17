@@ -22,8 +22,15 @@ def make_param_list(config):
 
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=config.max_nbatch, iterations=config.iterations, seed=config.data_seed, random_ntrack=config.random_ntrack, 
-                            track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len)
+
+    iterations = config.iterations
+    max_nbatch = config.max_nbatch
+
+    if iterations is not None and iterations<max_nbatch or max_nbatch<0:
+        max_nbatch = iterations
+
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
+                            track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input)
 
     batch_sz = config.batch_sz
     if config.max_batch_len is not None and batch_sz != 1:
@@ -48,7 +55,7 @@ def main(config):
                             fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn,
                             no_adc=config.no_adc, loss_fn=config.loss_fn)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=config.iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
+    param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
     return 0, 'Fitting successful'
 

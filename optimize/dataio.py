@@ -14,7 +14,7 @@ def structured_from_torch(tracks_torch, dtype):
 
 class TracksDataset(Dataset):
     def __init__(self, filename, ntrack, max_nbatch, iterations, swap_xz=True, seed=3, random_ntrack=False, track_zlen_sel=2., 
-                 track_z_bound=28., max_batch_len=None):
+                 track_z_bound=28., max_batch_len=None, print_input=False):
 
         with h5py.File(filename, 'r') as f:
             tracks = np.array(f['segments'])
@@ -104,13 +104,13 @@ class TracksDataset(Dataset):
             
             fit_tracks = batches
 
-            print(f"The used data includes total track length of {tot_data_length} cm.")
-            print(f"The maximum batch track length is {max_batch_len} cm.")
-            print(f"There are {len(batches)} different batches in total.")
+            print(f"- The used data includes total track length of {tot_data_length} cm.")
+            print(f"- The maximum batch track length is {max_batch_len} cm.")
+            print(f"- There are {len(batches)} different batches in total.")
 
         self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = -99) 
 
-        if ntrack < 200 and ntrack > 0:
+        if print_input:
             print("training set [ev, trk]: ", fit_index)
 
     def __len__(self):
