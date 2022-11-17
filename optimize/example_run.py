@@ -90,7 +90,7 @@ if __name__ == '__main__':
                         help="Random seed for target construction")
     parser.add_argument("--data_seed", dest="data_seed", default=3, type=int,
                         help="Random seed for data picking if not using the whole set")
-    parser.add_argument("--data_sz", dest="data_sz", default=-1, type=int,
+    parser.add_argument("--data_sz", dest="data_sz", default=None, type=int,
                         help="Data size for fitting (number of tracks); input negative values to run on the whole dataset")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
                         help="Flag to turn off readout noise (both target and guess)")
@@ -128,7 +128,7 @@ if __name__ == '__main__':
                         help="Loss function to use. Named options are SDTW and space_match.")
     parser.add_argument("--max_batch_len", dest="max_batch_len", default=None, type=float,
                         help="Max dx [cm] per batch. If passed, will add tracks to batch until overflow, splitting where needed")
-    parser.add_argument("--max_nbatch", dest="max_nbatch", default=-1, type=int,
+    parser.add_argument("--max_nbatch", dest="max_nbatch", default=None, type=int,
                         help="Upper number of different batches taken from the data, given the max_batch_len. Overrides data_sz.")
 
     try:

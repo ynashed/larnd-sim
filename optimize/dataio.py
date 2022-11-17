@@ -50,7 +50,7 @@ class TracksDataset(Dataset):
         # all fit with a sub-set of tracks
         fit_index = []
         fit_tracks = []
-        if ntrack >= len(index) or ntrack < 0:
+        if ntrack >= len(index) or ntrack is None:
             if random_ntrack:
                 random.shuffle(all_tracks)
             fit_tracks = all_tracks
@@ -68,9 +68,6 @@ class TracksDataset(Dataset):
                 fit_index.append(index[i_rand])
                 fit_tracks.append(all_tracks[i_rand])
       
-        if iterations is not None and iterations<max_nbatch or max_nbatch<0: 
-            max_nbatch = iterations
-
         if max_batch_len is not None:
             batches = []
             batch_here = []
@@ -91,7 +88,7 @@ class TracksDataset(Dataset):
                             print("batch length: ", tot_length - segment[self.track_fields.index("dx")])
                         batch_here = []
                         tot_length = 0
-                        if len(batches) >= max_nbatch and max_nbatch > 0: 
+                        if len(batches) >= max_nbatch and max_nbatch is not None: 
                             done_track_looping = True
                             break
                         batch_here.append(segment)
