@@ -22,8 +22,16 @@ def make_param_list(config):
 
 
 def main(config):
-    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, seed=config.data_seed, random_ntrack=config.random_ntrack, 
-                            track_zlen_sel=config.track_zlen_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len)
+
+    iterations = config.iterations
+    max_nbatch = config.max_nbatch
+
+    if iterations is not None:
+        if max_nbatch is None or iterations < max_nbatch or max_nbatch < 0:
+            max_nbatch = iterations
+
+    dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
+                            track_len_sel=config.track_len_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input)
 
     batch_sz = config.batch_sz
     if config.max_batch_len is not None and batch_sz != 1:
@@ -48,7 +56,7 @@ def main(config):
                             fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn,
                             no_adc=config.no_adc, loss_fn=config.loss_fn)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=config.iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
+    param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
     return 0, 'Fitting successful'
 
@@ -75,7 +83,7 @@ if __name__ == '__main__':
                         help='The number of worker threads to use for the dataloader.')
     parser.add_argument("--lr", dest="lr", default=1e1, type=float,
                         help="Learning rate -- used for all params")
-    parser.add_argument("--batch_sz", dest="batch_sz", default=2, type=int,
+    parser.add_argument("--batch_sz", dest="batch_sz", default=1, type=int,
                         help="Batch size for fitting (tracks).")
     parser.add_argument("--epochs", dest="epochs", default=100, type=int,
                         help="Number of epochs")
@@ -83,8 +91,8 @@ if __name__ == '__main__':
                         help="Random seed for target construction")
     parser.add_argument("--data_seed", dest="data_seed", default=3, type=int,
                         help="Random seed for data picking if not using the whole set")
-    parser.add_argument("--data_sz", dest="data_sz", default=5, type=int,
-                        help="data size for fitting (number of tracks)")
+    parser.add_argument("--data_sz", dest="data_sz", default=None, type=int,
+                        help="Data size for fitting (number of tracks); input negative values to run on the whole dataset")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
                         help="Flag to turn off readout noise (both target and guess)")
     parser.add_argument("--no-noise-target", dest="no_noise_target", default=False, action="store_true",
@@ -93,12 +101,12 @@ if __name__ == '__main__':
                         help="Flag to turn off readout noise (just guess, target has noise)")
     parser.add_argument("--data_shuffle", dest="data_shuffle", default=False, action="store_true",
                         help="Flag of data shuffling")
-    parser.add_argument("--save_freq", dest="save_freq", default=5, type=int,
+    parser.add_argument("--save_freq", dest="save_freq", default=10, type=int,
                         help="Save frequency of the result")
     parser.add_argument("--random_ntrack", dest="random_ntrack", default=False, action="store_true",
                         help="Flag of whether sampling the tracks randomly or sequentially")
-    parser.add_argument("--track_zlen_sel", dest="track_zlen_sel", default=2., type=float,
-                        help="Track selection requirement on the z expansion (drift axis)")
+    parser.add_argument("--track_len_sel", dest="track_len_sel", default=2., type=float,
+                        help="Track selection requirement on track length.")
     parser.add_argument("--track_z_bound", dest="track_z_bound", default=28., type=float,
                         help="Set z bound to keep healthy set of tracks")
     parser.add_argument("--out_label", dest="out_label", default="",
@@ -121,6 +129,11 @@ if __name__ == '__main__':
                         help="Loss function to use. Named options are SDTW and space_match.")
     parser.add_argument("--max_batch_len", dest="max_batch_len", default=None, type=float,
                         help="Max dx [cm] per batch. If passed, will add tracks to batch until overflow, splitting where needed")
+    parser.add_argument("--max_nbatch", dest="max_nbatch", default=None, type=int,
+                        help="Upper number of different batches taken from the data, given the max_batch_len. Overrides data_sz.")
+    parser.add_argument("--print_input", dest="print_input", default=False, action="store_true",
+                        help="print the evnet and track id per batch.")
+
     try:
         args = parser.parse_args()
         retval, status_message = main(args)

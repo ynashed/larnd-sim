@@ -187,7 +187,7 @@ class ParamFitter:
 
             
     def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
-            save_freq=5, print_freq=1, save_freq_iter=10, print_freq_iter=1):
+            save_freq=10, print_freq=1):
         # If explicit number of iterations, scale epochs accordingly
         if iterations is not None:
             epochs = iterations // len(dataloader) + 1
@@ -301,16 +301,16 @@ class ParamFitter:
                                                                                             param, scheme=self.norm_scheme, undo_norm=True))
 
                             if iterations is not None:
-                                if total_iter % print_freq_iter == 0:
+                                if total_iter % print_freq == 0:
                                     for param in self.relevant_params_list:
                                         print(param, getattr(self.sim_physics,param).item())
                                     
-                                if total_iter % save_freq_iter == 0:
+                                if total_iter % save_freq == 0:
                                     with open(f'history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
                                         pickle.dump(self.training_history, f_history)
 
-                                    if os.path.exists(f'history_{param}_iter{total_iter-save_freq_iter}_{self.out_label}.pkl'):
-                                        os.remove(f'history_{param}_iter{total_iter-save_freq_iter}_{self.out_label}.pkl') 
+                                    if os.path.exists(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl'):
+                                        os.remove(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl') 
 
                     total_iter += 1
                     pbar.update(1)
