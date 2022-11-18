@@ -16,7 +16,7 @@ def calc_forward(with_grad=False, param_list=[], shift=0.05, device='cpu'):
     pixel_layouts = "larndsim/pixel_layouts/multi_tile_layout-2.2.16.yaml"
     input_file =  "tests/data/test_inputs.h5"
 
-    dataset = TracksDataset(filename=input_file, ntrack=1, track_zlen_sel=0, track_z_bound=32)
+    dataset = TracksDataset(filename=input_file, ntrack=1, track_len_sel=0, track_z_bound=32)
     selected_tracks_torch = dataset[0][0:1]
     track_fields = dataset.get_track_fields()
 
