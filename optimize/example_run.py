@@ -54,7 +54,7 @@ def main(config):
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
                             out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val,
                             fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn,
-                            no_adc=config.no_adc, loss_fn=config.loss_fn)
+                            no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
     param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
@@ -132,7 +132,9 @@ if __name__ == '__main__':
     parser.add_argument("--max_nbatch", dest="max_nbatch", default=None, type=int,
                         help="Upper number of different batches taken from the data, given the max_batch_len. Overrides data_sz.")
     parser.add_argument("--print_input", dest="print_input", default=False, action="store_true",
-                        help="print the evnet and track id per batch.")
+                        help="print the event and track id per batch.")
+    parser.add_argument("--shift-no-fit", dest="shift_no_fit", default=[], nargs="+", 
+                        help="Set of params to shift in target sim without fitting them (robustness/separability check).")
 
     try:
         args = parser.parse_args()

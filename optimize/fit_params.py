@@ -37,7 +37,8 @@ class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
                  lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
-                 out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", no_adc=False):
+                 out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
+                 no_adc=False, shift_no_fit=[]):
 
         if optimizer_fn == "Adam":
             self.optimizer_fn = torch.optim.Adam
@@ -48,6 +49,7 @@ class ParamFitter:
         self.optimizer_fn_name = optimizer_fn
 
         self.no_adc = no_adc
+        self.shift_no_fit = shift_no_fit
 
         self.out_label = out_label
         self.norm_scheme = norm_scheme
@@ -164,6 +166,8 @@ class ParamFitter:
 
                 self.training_history[param + '_target'] = []
                 self.training_history[param + '_lr'] = [lr_dict[param]]
+            for param in self.shift_no_fit:
+                self.training_history[param + '_target'] = []
 
             self.training_history['losses'] = []
             self.training_history['losses_iter'] = []
@@ -174,7 +178,7 @@ class ParamFitter:
     def make_target_sim(self, seed=2, fixed_range=None):
         np.random.seed(seed)
         print("Constructing target param simulation")
-        for param in self.relevant_params_list:
+        for param in self.relevant_params_list + self.shift_no_fit:
             if fixed_range is not None:
                 param_val = np.random.uniform(low=ranges[param]['nom']*(1.-fixed_range), 
                                               high=ranges[param]['nom']*(1.+fixed_range))
@@ -205,6 +209,9 @@ class ParamFitter:
                 self.training_history[param+'_target'].append(getattr(self.sim_target, param))
             if len(self.training_history[param+"_iter"]) == 0:
                 self.training_history[param+"_iter"].append(getattr(self.sim_physics, param))
+        for param in self.shift_no_fit:
+            if len(self.training_history[param+'_target']) == 0:
+                self.training_history[param+'_target'].append(getattr(self.sim_target, param))
 
         if iterations is not None:
             pbar_total = iterations
