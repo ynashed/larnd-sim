@@ -2,7 +2,7 @@
 ranges = {}
 ranges['lArDensity']     = {'nom': 1.38, 'down': 1.37, 'up': 1.41}
 ranges['eField']         = {'nom': 0.5, 'down': 0.45, 'up': 0.55}
-ranges['vdrift']         = {'nom': 0.1587, 'down': 0.1400, 'up': 0.1800}
+ranges['vdrift']         = {'nom': 0.1596, 'down': 0.1400, 'up': 0.1800}
 ranges['MeVToElectrons'] = {'nom': 4.237e4, 'down': 3.48e4, 'up': 5.13e4}
 ranges['alpha']          = {'nom': 0.93, 'down': 0.85, 'up': 1.1}
 ranges['beta']           = {'nom': 0.207, 'down': 0.18, 'up': 0.22}

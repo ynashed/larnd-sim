@@ -44,6 +44,8 @@ class consts:
         self.lArDensity = 1.38 # g/cm^3
         #: Electric field magnitude in :math:`kV/cm`
         self.eField = 0.50 # kV/cm
+        #: LAr temperature
+        self.temperature = 87.17 # K
 
         ## Unit Conversions
         self.MeVToElectrons = 4.237e+04
@@ -59,6 +61,8 @@ class consts:
         self.kb = 0.0486 # g/cm2/MeV Amoruso, et al NIM A 523 (2004) 275
         #: Electron charge in Coulomb
         self.e_charge = 1.602e-19
+        #: Mobility model parameters
+        self.ELECTRON_MOBILITY_PARAMS = 551.6, 7158.3, 4440.43, 4.29, 43.63, 0.2053
 
         ## TPC params
         #: Drift velocity in :math:`cm/\mu s`
@@ -132,6 +136,31 @@ class consts:
         self.xs = 0
         self.ys = 0
 
+    def electron_mobility(self, efield, temperature):
+        """
+        Calculation of the electron mobility w.r.t temperature and electric
+        field.
+        References:
+         - https://lar.bnl.gov/properties/trans.html (summary)
+         - https://doi.org/10.1016/j.nima.2016.01.073 (parameterization)
+         
+        Args:
+            efield (float): electric field in kV/cm
+            temperature (float): temperature
+            
+        Returns:
+            float: electron mobility in cm^2/kV/us
+        """
+        a0, a1, a2, a3, a4, a5 = self.ELECTRON_MOBILITY_PARAMS
+    
+        num = a0 + a1 * efield + a2 * pow(efield, 1.5) + a3 * pow(efield, 2.5)
+        denom = 1 + (a1 / a0) * efield + a4 * pow(efield, 2) + a5 * pow(efield, 3)
+        temp_corr = pow(temperature / 89, -1.5)
+    
+        mu = num / denom * temp_corr / 1000 #* V / kV
+    
+        return mu
+
     def load_detector_properties(self, detprop_file, pixel_file):
         """
         The function loads the detector properties and
@@ -156,7 +185,9 @@ class consts:
         self.vdrift_static = detprop['vdrift_static']
 
         self.eField = detprop['eField']
-        self.vdrift = detprop['vdrift']
+        self.vdrift = detprop['eField'] * self.electron_mobility(detprop['eField'], self.temperature)
+        print("self.vdrift: ", self.vdrift)  
+        #self.vdrift = detprop['vdrift']
         self.lifetime = detprop['lifetime']
         self.MeVToElectrons = detprop['MeVToElectrons']
         self.Ab = detprop['Ab']
