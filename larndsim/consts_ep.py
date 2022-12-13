@@ -186,7 +186,6 @@ class consts:
 
         self.eField = detprop['eField']
         self.vdrift = detprop['eField'] * self.electron_mobility(detprop['eField'], self.temperature)
-        print("self.vdrift: ", self.vdrift)  
         #self.vdrift = detprop['vdrift']
         self.lifetime = detprop['lifetime']
         self.MeVToElectrons = detprop['MeVToElectrons']

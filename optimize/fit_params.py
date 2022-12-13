@@ -138,7 +138,11 @@ class ParamFitter:
             print("Using space match loss")
         elif loss_fn == "SDTW":
             self.loss_fn = calc_soft_dtw_loss
-            t_only = "vdrift" in self.relevant_params_list
+
+            if self.no_adc:
+                t_only = True
+            else:
+                t_only = False
             adc_only = not t_only
 
             self.loss_fn_kw = {
