@@ -5,9 +5,12 @@ import yaml
 import sys, os
 import traceback
 from torch.utils.data import DataLoader
+import json
+import numpy as np
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
+from .ranges import ranges
 
 def make_param_list(config):
     if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
@@ -19,6 +22,23 @@ def make_param_list(config):
     else:
         param_list = config.param_list
     return param_list
+
+def get_initial_values(config, param_list):
+    init_dict = {}
+    if config.sample_init:
+        np.random.seed(config.init_seed)
+        for param in param_list:
+            sampled_val = np.random.uniform(low=ranges[param]['down'], 
+                                            high=ranges[param]['up'])
+            init_dict[param] = sampled_val
+    elif len(config.fixed_init) == len(param_list):
+        for i, param in enumerate(param_list):
+            init_dict[param] = config.fixed_init[i]
+    else:
+        for param in param_list:
+            init_dict[param] = ranges[param]['nom']
+    
+    return init_dict
 
 
 def main(config):
@@ -46,6 +66,7 @@ def main(config):
     # For readout noise: no_noise overrides if explicitly set to True. Otherwise, turn on noise
     # individually for target and guess
     param_list = make_param_list(config)
+    initial_val_dict = get_initial_values(config, param_list)
     param_fit = ParamFitter(param_list, dataset.get_track_fields(),
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
@@ -54,7 +75,10 @@ def main(config):
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
                             out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val,
                             fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn,
-                            no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit)
+                            lr_scheduler=config.lr_scheduler, lr_kw=config.lr_kw,
+                            no_adc=config.no_adc, loss_fn=config.loss_fn, 
+                            shift_no_fit=config.shift_no_fit, 
+                            initial_vals=initial_val_dict)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
     param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
@@ -121,6 +145,10 @@ if __name__ == '__main__':
                         help="Turns on fitting of differences rather than direct fitting of values")
     parser.add_argument("--optimizer_fn", dest="optimizer_fn", default="Adam",
                         help="Choose optimizer function (here Adam vs SGD")
+    parser.add_argument("--lr_scheduler", dest="lr_scheduler", default=None,
+                        help="Schedule learning rate, e.g. ExponentialLR")
+    parser.add_argument("--lr_kw", dest="lr_kw", default=None, type=json.loads,
+                        help="kwargs for learning rate scheduler, as string dict")
     parser.add_argument("--no_adc", dest="no_adc", default=False, action="store_true",
                         help="Don't include ADC in loss (e.g. for vdrift)")
     parser.add_argument("--iterations", dest="iterations", default=None, type=int,
@@ -135,6 +163,12 @@ if __name__ == '__main__':
                         help="print the event and track id per batch.")
     parser.add_argument("--shift-no-fit", dest="shift_no_fit", default=[], nargs="+", 
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
+    parser.add_argument("--sample-init", dest="sample_init", default=False, action="store_true",
+                        help="Sample initial value instead of taking nominal")
+    parser.add_argument("--init-seed", dest="init_seed", default=10, type=int,
+                        help="Seed for initial value random sample.")
+    parser.add_argument("--fixed-init", dest="fixed_init", default=[], nargs="+",
+                        help="List of values to use for initializing, ordering should follow param list")
 
     try:
         args = parser.parse_args()

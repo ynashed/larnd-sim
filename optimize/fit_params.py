@@ -36,9 +36,10 @@ def normalize_param(param_val, param_name, scheme="divide", undo_norm=False):
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
-                 lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
+                 lr=None, optimizer=None, lr_scheduler=None, lr_kw=None,
+                 loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
-                 no_adc=False, shift_no_fit=[]):
+                 no_adc=False, shift_no_fit=[], initial_vals=None):
 
         if optimizer_fn == "Adam":
             self.optimizer_fn = torch.optim.Adam
@@ -87,12 +88,16 @@ class ParamFitter:
         self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess)
         self.sim_iter.load_detector_properties(detector_props, pixel_layouts)
 
-        # Normalize parameters to init at 1, or set to checkpointed values
+        # Normalize parameters to init at 1, or set to input/checkpointed values
         for param in self.relevant_params_list:
             if is_continue:
                 setattr(self.sim_iter, param, normalize_param(history[param][-1], param, scheme=self.norm_scheme))
             else:
-                setattr(self.sim_iter, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme))
+                if initial_vals is None:
+                    setattr(self.sim_iter, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme))
+                else:
+                    setattr(self.sim_iter, param, normalize_param(initial_vals[param], param, scheme=self.norm_scheme))
+                    print(f"Initializing {param} to {initial_vals[param]}")
 
         # Keep track of gradients in sim_iter
         self.sim_iter.track_gradients(self.relevant_params_list, fit_diffs=self.fit_diffs)
@@ -100,6 +105,9 @@ class ParamFitter:
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
         self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess)
         self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
+
+        for param in self.relevant_params_list:
+            setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param).item(), param, scheme=self.norm_scheme, undo_norm=True))
 
         # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
         lr_dict = {}
@@ -126,6 +134,13 @@ class ParamFitter:
 
         else:
             self.optimizer = optimizer
+
+        if lr_scheduler is not None and lr_kw is not None:
+            lr_scheduler_fn = getattr(torch.optim.lr_scheduler, lr_scheduler)
+            self.lr_scheduler = lr_scheduler_fn(self.optimizer, **lr_kw)
+            print(f"Using learning rate scheduler {lr_scheduler}")
+        else:
+            self.lr_scheduler = None
 
         # Set up loss function -- can pass in directly, or choose a named one
         if loss_fn is None or loss_fn == "space_match":
@@ -325,6 +340,9 @@ class ParamFitter:
                     if iterations is not None:
                         if total_iter >= iterations:
                             break
+
+                if self.lr_scheduler is not None:
+                    self.lr_scheduler.step()
 
                 # Print out params at each epoch
                 if epoch % print_freq == 0 and iterations is None:
