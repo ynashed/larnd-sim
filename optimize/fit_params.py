@@ -139,10 +139,7 @@ class ParamFitter:
         elif loss_fn == "SDTW":
             self.loss_fn = calc_soft_dtw_loss
 
-            if self.no_adc:
-                t_only = True
-            else:
-                t_only = False
+            t_only = self.no_adc
             adc_only = not t_only
 
             self.loss_fn_kw = {
@@ -205,6 +202,9 @@ class ParamFitter:
             shutil.rmtree('target_' + self.out_label, ignore_errors=True)
         os.makedirs('target_' + self.out_label)
 
+        # make a folder for the fit result
+        if not os.path.exists('fit_result'):
+            os.makedirs('fit_result')
 
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
@@ -317,11 +317,11 @@ class ParamFitter:
                                         print(param, getattr(self.sim_physics,param).item())
                                     
                                 if total_iter % save_freq == 0:
-                                    with open(f'history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
+                                    with open(f'fit_result/history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
                                         pickle.dump(self.training_history, f_history)
 
-                                    if os.path.exists(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl'):
-                                        os.remove(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl') 
+                                    if os.path.exists(f'fit_result/history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl'):
+                                        os.remove(f'fit_result/history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl') 
 
                     total_iter += 1
                     pbar.update(1)
@@ -344,11 +344,15 @@ class ParamFitter:
                 # Save history in pkl files
                 n_steps = len(self.training_history[param])
                 if n_steps % save_freq == 0 and iterations is None:
-                    with open(f'history_{param}_epoch{n_steps}_{self.out_label}.pkl', "wb") as f_history:
+                    with open(f'fit_result/history_{param}_epoch{n_steps}_{self.out_label}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)
-                    if os.path.exists(f'history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
-                        os.remove(f'history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl') 
+                    if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
+                        os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl') 
 
+        with open(f'fit_result/history_{param}_{self.out_label}.pkl', "wb") as f_history:
+            pickle.dump(self.training_history, f_history)
+            if os.path.exists(f'fit_result/history_{param}_epoch{iterations-save_freq}_{self.out_label}.pkl'):
+                os.remove(f'fit_result/history_{param}_epoch{iterations-save_freq}_{self.out_label}.pkl')
 
     def loss_scan_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
 
