@@ -38,7 +38,7 @@ class ParamFitter:
                  detector_props, pixel_layouts, load_checkpoint = None,
                  lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
-                 no_adc=False, shift_no_fit=[]):
+                 no_adc=False, shift_no_fit=[], link_vdrift_eField=False):
 
         if optimizer_fn == "Adam":
             self.optimizer_fn = torch.optim.Adam
@@ -50,6 +50,7 @@ class ParamFitter:
 
         self.no_adc = no_adc
         self.shift_no_fit = shift_no_fit
+        self.link_vdrift_eField = link_vdrift_eField
 
         self.out_label = out_label
         self.norm_scheme = norm_scheme
@@ -82,6 +83,7 @@ class ParamFitter:
         # Simulation object for target
         self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_target)
         self.sim_target.load_detector_properties(detector_props, pixel_layouts)
+        self.sim_target.link_vdrift_eField = link_vdrift_eField
 
         # Simulation object for iteration -- this is where gradient updates will happen
         self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess)
@@ -100,6 +102,7 @@ class ParamFitter:
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
         self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess)
         self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
+        self.sim_physics.link_vdrift_eField = link_vdrift_eField
 
         # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
         lr_dict = {}

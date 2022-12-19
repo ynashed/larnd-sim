@@ -19,6 +19,8 @@ class manage_diff:
             nom = getattr(obj, f'{self.public_name}_nom')
             diff = getattr(obj, f'{self.public_name}_diff')
             return nom + diff
+        elif self.public_name == 'vdrift' and obj.link_vdrift_eField:
+            return obj.eField * obj.electron_mobility(obj.eField, obj.temperature)
         else:
             return getattr(obj, self.private_name)
         
@@ -38,6 +40,8 @@ class consts:
     def __init__(self):
         ## Turn smoothing on/off to help gradients
         self.smooth = True
+
+        self.link_vdrift_eField = False
 
         ## Detector constants
         #: Liquid argon density in :math:`g/cm^3`
@@ -185,8 +189,7 @@ class consts:
         self.vdrift_static = detprop['vdrift_static']
 
         self.eField = detprop['eField']
-        self.vdrift = detprop['eField'] * self.electron_mobility(detprop['eField'], self.temperature)
-        #self.vdrift = detprop['vdrift']
+        self.vdrift = detprop['vdrift']
         self.lifetime = detprop['lifetime']
         self.MeVToElectrons = detprop['MeVToElectrons']
         self.Ab = detprop['Ab']

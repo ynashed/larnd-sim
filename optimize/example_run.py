@@ -57,7 +57,8 @@ def main(config):
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
                             out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val,
                             fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn,
-                            no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit)
+                            no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit,
+                            link_vdrift_eField=config.link_vdrift_eField)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
     param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
@@ -142,6 +143,8 @@ if __name__ == '__main__':
                         help="print the event and track id per batch.")
     parser.add_argument("--shift-no-fit", dest="shift_no_fit", default=[], nargs="+", 
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
+    parser.add_argument("--link-vdrift-eField", dest="link_vdrift_eField", default=False, action="store_true",
+                        help="Link vdrift and eField in fitting")
 
     try:
         args = parser.parse_args()
