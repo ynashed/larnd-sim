@@ -7,6 +7,7 @@ import numpy as np
 from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
 from larndsim.sim_with_grad import sim_with_grad
+from profiling.profiling import memprof
 import torch
 
 from tqdm import tqdm
@@ -189,7 +190,8 @@ class ParamFitter:
             print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
             setattr(self.sim_target, param, param_val)
 
-            
+
+    @memprof(columns=('active_bytes.all.peak', 'reserved_bytes.all.peak'))         
     def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
             save_freq=10, print_freq=1):
         # If explicit number of iterations, scale epochs accordingly
