@@ -3,7 +3,7 @@ import sys
 import warnings
 import torch
 
-from .line_records import LineRecords
+from .records import Records
 
 class LineProf:
     def __init__(self, *functions):
@@ -15,12 +15,10 @@ class LineProf:
 
     def add_function(self, func):
         try:
-            # We need to use the hash here because pandas will later expect something
-            # orderable for its index
             code_hash = hash(func.__code__)
         except AttributeError:
             warnings.warn(
-                "Could not extract a code object for the object %r" % (func,))
+                f"Could not extract a code object for the object {func}")
             return
         if code_hash not in self._code_infos:
             first_line = inspect.getsourcelines(func)[1]
@@ -31,7 +29,6 @@ class LineProf:
                 'prev_record': -1,
             }
 
-        # re-register the newer trace_callback
         if self.enabled:
             self.register_callback()
 
@@ -79,6 +76,7 @@ class LineProf:
                 'line': code_info['prev_line'],
                 'prev_record_idx': code_info['prev_record'],
                 **torch.cuda.memory_stats()})
+
             self._reset_cuda_stats()
 
             if event == 'line':
@@ -89,7 +87,7 @@ class LineProf:
                 code_info['prev_record'] = -1
 
     def display(self, func, columns = None):
-        return LineRecords(self._raw_line_records, self._code_infos).display(func, columns)
+        return Records(self._raw_line_records, self._code_infos).display(func, columns)
 
     def print_stats(self, func, columns = None, stream=sys.stdout):
         stream.write(str(self.display(func, columns)))
