@@ -13,12 +13,14 @@ def to_profile(function):
 global_line_profiler = LineProf()
 global_line_profiler.enable()
 
+base_columns = ('active_bytes.all.peak', 'reserved_bytes.all.peak')
+
 
 def clear_global_line_profiler():
     global_line_profiler.clear()
 
 
-def memprof(columns = None, enable = True):
+def memprof(columns = base_columns, enable = True):
     def decorator(func):
         if enable:
             global_line_profiler.add_function(func)
