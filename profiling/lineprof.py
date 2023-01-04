@@ -10,10 +10,11 @@ class LineProf:
         self._code_infos = {}
         self._raw_line_records = []
         self.enabled = False
+        self.registered = {}
         for func in functions:
             self.add_function(func)
 
-    def add_function(self, func):
+    def add_function(self, func, columns):
         try:
             code_hash = hash(func.__code__)
         except AttributeError:
@@ -28,6 +29,7 @@ class LineProf:
                 'prev_line': first_line,
                 'prev_record': -1,
             }
+            self.registered[code_hash] = columns
 
         if self.enabled:
             self.register_callback()
@@ -64,6 +66,9 @@ class LineProf:
         self._code_infos = {}
         self._raw_line_records = []
 
+    def has_registered(self):
+        return bool(self.registered)
+
     def _trace_callback(self, frame, event, *_):
         if event == 'call':
             return self._trace_callback
@@ -86,8 +91,10 @@ class LineProf:
                 code_info['prev_line'] = code_info['first_line']
                 code_info['prev_record'] = -1
 
-    def display(self, func, columns = None):
-        return Records(self._raw_line_records, self._code_infos).display(func, columns)
+    def print_stats(self, stream=sys.stdout):
+        records = Records(self._raw_line_records, self._code_infos)
+        print(f"Starting to analyze the memory records ; got {len(self._raw_line_records)} records for {len(self.registered)} functions to analyze\n")
 
-    def print_stats(self, func, columns = None, stream=sys.stdout):
-        stream.write(str(self.display(func, columns)))
+        for code_hash, columns in self.registered.items():
+            func = self._code_infos[code_hash]['func']
+            stream.write(str(records.display(func, columns)))

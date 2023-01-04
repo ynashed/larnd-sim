@@ -26,7 +26,6 @@ class detsim(consts):
         self.pixel_chunk = pixel_chunk
         consts.__init__(self)
 
-    @memprof()
     def time_intervals(self, tracks, fields):
         """
         Find the value of the longest signal time and stores the start
@@ -131,11 +130,9 @@ class detsim(consts):
         z_max_delta = ep.where(cond, ep.maximum(minusDeltaZ, plusDeltaZ), 0)
         return z_poca, z_min_delta, z_max_delta
 
-    @memprof()
     def erf_hack(self, input):
         return ep.astensor(torch.erf(input.raw))
 
-    @memprof()
     def sigmoid(self, x):
         # Using torch here, otherwise we get overflow -- might be able to get around with a trick
         return ep.astensor(torch.sigmoid(x.raw))
@@ -194,7 +191,6 @@ class detsim(consts):
         # Ask about the x_dist, y_dist > pixel_pitch/2 conditions in the original simulation
         return expo
 
-    @memprof()
     def truncexpon(self, x, loc=0, scale=1, y_cutoff=-10., rate=100):
         """
         A truncated exponential distribution.
@@ -211,7 +207,6 @@ class detsim(consts):
             # Make everything positive and then mask to avoid nans
             return (ep.exp(-ep.abs(y)) * (y>0)) / scale
 
-    @memprof()
     def current_model(self, t, t0, x, y):
         """
         Parametrization of the induced current on the pixel, which depends
@@ -247,7 +242,6 @@ class detsim(consts):
 
         return a * self.truncexpon(-t, -shifted_t0, b) + (1 - a) * self.truncexpon(-t, -shifted_t0, c) 
 
-    @memprof()
     def track_point(self, start, direction, z):
         """
         This function returns the segment coordinates for a point along the `z` coordinate
@@ -266,7 +260,6 @@ class detsim(consts):
 
         return xl, yl
 
-    @memprof()
     def get_pixel_coordinates(self, pixels):
         """
         Returns the coordinates of the pixel center given the pixel IDs
@@ -279,7 +272,6 @@ class detsim(consts):
         pix_y = pixels[..., 1] * self.pixel_pitch + borders[..., 1, 0]
         return pix_x[...,ep.newaxis], pix_y[...,ep.newaxis]
 
-    @memprof()
     def calc_total_current(self, x_start, y_start, z_start,
                            z_end, z_start_int, z_end_int, z_poca, 
                            x_p, y_p, x_step, y_step, borders, direction, sigmas, tracks_ep, start, segment, time_tick, vdrift):
@@ -358,7 +350,7 @@ class detsim(consts):
         
         return total_current.sum(axis=(3, 4, 5)).raw
 
-    @memprof()
+
     def tracks_current(self, pixels, tracks, time_max, fields):
         """
         This function calculates the charge induced on the pixels by the input tracks.
@@ -452,7 +444,7 @@ class detsim(consts):
         
         return signals.raw
 
-    @memprof()
+
     def sum_pixel_signals(self, pixels_signals, signals, track_starts, index_map):
         """
         This function sums the induced current signals on the same pixel.

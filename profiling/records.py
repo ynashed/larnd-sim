@@ -61,6 +61,7 @@ class Records:
             code = code + lines
         self._code = pd.DataFrame(code, columns = ['code_hash', 'func_name', 'code', 'line'])
         self._records = pd.DataFrame(records)
+
         self._merged = pd.merge(self._records, self._code, on=['code_hash', 'line'], how='right')
         self._merged.prev_record_idx = self._merged.prev_record_idx.astype('Int64')
 

@@ -1,6 +1,7 @@
 import torch
 from .lineprof import LineProf
 from functools import wraps
+import atexit
 
 def to_profile(function):
     @wraps(function)
@@ -23,13 +24,12 @@ def clear_global_line_profiler():
 def memprof(columns = base_columns, enable = True):
     def decorator(func):
         if enable:
-            global_line_profiler.add_function(func)
-            import atexit
-
-            def print_stats_atexit():
-                global_line_profiler.print_stats(func, columns)
-            atexit.register(print_stats_atexit)
-
+            if not global_line_profiler.has_registered():
+                def print_stats_atexit():
+                    global_line_profiler.print_stats()
+                atexit.register(print_stats_atexit)
+            global_line_profiler.add_function(func, columns)
+            
         @wraps(func)
         def run_func(*args, **kwargs):
             return func(*args, **kwargs)
