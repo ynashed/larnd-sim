@@ -62,12 +62,11 @@ class Records:
         self._code = pd.DataFrame(code, columns = ['code_hash', 'func_name', 'code', 'line'])
         self._records = pd.DataFrame(records)
 
-        self._merged = pd.merge(self._records, self._code, on=['code_hash', 'line'], how='right')
-        self._merged.prev_record_idx = self._merged.prev_record_idx.astype('Int64')
-
         self._accumulate_records()
-        
-        
+        self._merged = pd.merge(self._records, self._code, on=['code_hash', 'line'], how='left')
+
+        #inserting the lines with no records for completeness
+        self._merged = pd.merge(self._merged, self._code, on=['code_hash', 'func_name', 'code', 'line'], how='right')
 
     def display(self, func, columns):
         if len(self._merged) == 0:
@@ -96,19 +95,16 @@ class Records:
 
 
     def _accumulate_records(self):
-        acc_mask = self._merged.columns.str.match(r'.*(allocated|freed)$')
-        peak_mask = self._merged.columns.str.match(r'.*(peak)$')
-        acc_raw, peak_raw = self._merged.loc[:, acc_mask].values, self._merged.loc[:, peak_mask].values
+        acc_mask = self._records.columns.str.match(r'.*(allocated|freed)$')
+        peak_mask = self._records.columns.str.match(r'.*(peak)$')
+        acc_raw, peak_raw = self._records.loc[:, acc_mask].values, self._records.loc[:, peak_mask].values
         acc_corr, peak_corr = acc_raw.copy(), peak_raw.copy()
 
-        for row, record in self._merged.iterrows():
-            if pd.isna(record['prev_record_idx']) or record['prev_record_idx'] == -1 or record['prev_record_idx'] == row-1:
+        for row, record in self._records.iterrows():
+            if record['prev_record_idx'] == -1 or record['prev_record_idx'] == row-1:
                 continue
-
             acc_corr[row] = acc_raw[record['prev_record_idx']+1:row+1].sum(0)
             peak_corr[row] = peak_raw[record['prev_record_idx']+1:row+1].max(0)
 
-        corr = self._merged.copy()
-        corr.loc[:, acc_mask] = acc_corr
-        corr.loc[:, peak_mask] = peak_corr
-        return corr
+        self._records.loc[:, acc_mask] = acc_corr
+        self._records.loc[:, peak_mask] = peak_corr

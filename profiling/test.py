@@ -8,13 +8,13 @@ def test_func():
     B = A = torch.ones(1000, 1000).cuda()
 
     C = A + B
-
-    D = inner_func(C)
-    E = inner_func(C)
+    for i in range(3):
+        D = inner_func(C)
 
 @memprof()
 def inner_func(tensor):
     tensor = torch.exp(tensor)
+    A = torch.ones(1000, 1000).cuda()
     return tensor
 
 if __name__ == '__main__':
