@@ -191,7 +191,7 @@ class ParamFitter:
             setattr(self.sim_target, param, param_val)
 
 
-    @memprof(columns=('active_bytes.all.peak', 'reserved_bytes.all.peak'))         
+    @memprof()         
     def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
             save_freq=10, print_freq=1):
         # If explicit number of iterations, scale epochs accordingly
