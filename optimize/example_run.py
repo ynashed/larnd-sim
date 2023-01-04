@@ -23,7 +23,7 @@ def make_param_list(config):
 
 
 def main(config):
-    print(config)
+    
     if not config.memprof:
         disable_memprof()
 
