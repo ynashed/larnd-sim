@@ -92,7 +92,7 @@ class LineProf:
                 code_info['prev_record'] = -1
 
     def print_stats(self, stream=sys.stdout):
-        if not self.enabled:
+        if not self.enabled or not self._raw_line_records or not self._code_infos:
             return
 
         records = Records(self._raw_line_records, self._code_infos)

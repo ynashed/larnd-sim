@@ -23,7 +23,7 @@ def make_param_list(config):
 
 
 def main(config):
-
+    print(config)
     if not config.memprof:
         disable_memprof()
 
@@ -139,7 +139,7 @@ if __name__ == '__main__':
                         help="print the event and track id per batch.")
     parser.add_argument("--shift-no-fit", dest="shift_no_fit", default=[], nargs="+", 
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
-    parser.add_argument("--memprof", dest="memprof", default=True, action="store_true", 
+    parser.add_argument("--memprof", dest="memprof", default=False, action="store_true", 
                         help="Toggles the memory line profiling.")
 
     try:
