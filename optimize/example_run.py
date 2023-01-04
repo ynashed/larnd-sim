@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
+from profiling.profiling import disable_memprof
 
 def make_param_list(config):
     if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
@@ -22,6 +23,9 @@ def make_param_list(config):
 
 
 def main(config):
+
+    if not config.memprof:
+        disable_memprof()
 
     iterations = config.iterations
     max_nbatch = config.max_nbatch
@@ -135,6 +139,8 @@ if __name__ == '__main__':
                         help="print the event and track id per batch.")
     parser.add_argument("--shift-no-fit", dest="shift_no_fit", default=[], nargs="+", 
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
+    parser.add_argument("--memprof", dest="memprof", default=True, action="store_true", 
+                        help="Toggles the memory line profiling.")
 
     try:
         args = parser.parse_args()

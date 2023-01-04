@@ -20,10 +20,14 @@ base_columns = ('active_bytes.all.peak', 'reserved_bytes.all.peak')
 def clear_global_line_profiler():
     global_line_profiler.clear()
 
+def disable_memprof():
+    print("Disabling the memory line profiler")
+    global_line_profiler.disable()
 
-def memprof(columns = base_columns, enable = True):
+
+def memprof(columns = base_columns):
     def decorator(func):
-        if enable:
+        if global_line_profiler.enabled:
             if not global_line_profiler.has_registered():
                 def print_stats_atexit():
                     global_line_profiler.print_stats()
