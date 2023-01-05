@@ -2,6 +2,7 @@ import inspect
 import sys
 import warnings
 import torch
+import time
 
 from .records import Records
 
@@ -80,6 +81,7 @@ class LineProf:
                 'code_hash': code_hash,
                 'line': code_info['prev_line'],
                 'prev_record_idx': code_info['prev_record'],
+                'time': time.time_ns(),
                 **torch.cuda.memory_stats()})
 
             self._reset_cuda_stats()

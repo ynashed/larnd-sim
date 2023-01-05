@@ -26,6 +26,9 @@ def best_repr(nbytes):
 
     return f"{value:.2f}{unit}" if not isnan(value) else ''
 
+def time_format(t):
+    return f"{t*1e-6:.1f} ms" if not isnan(t) else ''
+
 def make_lalign_formatter(df, cols=None):
     """
     https://stackoverflow.com/a/67202912
@@ -84,7 +87,8 @@ class Records:
         maxlen = max(len(c) for c in selected.code)
         left_align = '{{:{maxlen}s}}'.format(maxlen=maxlen)
         selected[byte_cols] = selected[byte_cols].applymap(best_repr)
-        selected = selected[[*columns, 'line', 'code']]
+        selected.time = selected.time.apply(time_format)
+        selected = selected[[*columns, 'time', 'line', 'code']]
         selected['code'] = selected['code'].apply(lambda l: l.rstrip('\n\r'))
 
 
@@ -99,8 +103,13 @@ class Records:
         peak_mask = self._records.columns.str.match(r'.*(peak)$')
         acc_raw, peak_raw = self._records.loc[:, acc_mask].values, self._records.loc[:, peak_mask].values
         acc_corr, peak_corr = acc_raw.copy(), peak_raw.copy()
+        prev_time = self._records.time[0]
+
+        elapsed_time = self._records.time.copy()
 
         for row, record in self._records.iterrows():
+            elapsed_time[row] = record.time - prev_time
+            prev_time = record.time
             if record['prev_record_idx'] == -1 or record['prev_record_idx'] == row-1:
                 continue
             acc_corr[row] = acc_raw[record['prev_record_idx']+1:row+1].sum(0)
@@ -108,3 +117,4 @@ class Records:
 
         self._records.loc[:, acc_mask] = acc_corr
         self._records.loc[:, peak_mask] = peak_corr
+        self._records.time = elapsed_time
