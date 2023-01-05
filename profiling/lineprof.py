@@ -6,6 +6,13 @@ import time
 
 from .records import Records
 
+from dataclasses import dataclass
+@dataclass
+class Func:
+    lines: list
+    start_line: int
+    __qualname__: str
+
 class LineProf:
     def __init__(self, *functions):
         self._code_infos = {}
@@ -13,6 +20,7 @@ class LineProf:
         self.enabled = False
         self.registered = {}
         self.file_output = False
+        self.export_data = False
         for func in functions:
             self.add_function(func)
 
@@ -67,12 +75,33 @@ class LineProf:
     def set_file_output(self, val):
         self.file_output = bool(val)
 
+    def set_data_export(self, val):
+        self.export_data = bool(val) 
+
     def clear(self):
         self._code_infos = {}
         self._raw_line_records = []
 
     def has_registered(self):
         return bool(self.registered)
+
+    def export(self, fname):
+        # Pickle does not want to pickle the function objects that are decorated... so we need to save only part of the info
+        import pickle
+        import inspect
+
+
+        simplified_code_infos = {h : {'func': Func(*inspect.getsourcelines(func['func']), func['func'].__qualname__)} for h, func in self._code_infos.items()}
+
+        to_export = {
+            'line_records': self._raw_line_records,
+            'code_infos': simplified_code_infos
+        }
+
+
+        with open(fname, 'wb') as f:
+            pickle.dump(to_export, f)
+
 
     def _trace_callback(self, frame, event, *_):
         if event == 'call':
@@ -105,9 +134,14 @@ class LineProf:
         print(f"Starting to analyze the memory records ; got {len(self._raw_line_records)} records for {len(self.registered)} functions to analyze\n")
 
         ofilename = None
+        curtime = time.strftime('%Y%m%d-%H%M%S')
         if self.file_output:
-            ofilename = f"memprof_{time.strftime('%Y%m%d-%H%M%S')}.txt"
+            ofilename = f"memprof_{curtime}.txt"
             print(f"Writing memprof output in {ofilename}")
+        if self.export_data:
+            fname = f"memprof_{curtime}.pkl"
+            print(f"Writing memprof raw data in {fname}")
+            self.export(fname)
 
         for code_hash, columns in self.registered.items():
             func = self._code_infos[code_hash]['func']

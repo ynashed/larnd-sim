@@ -27,6 +27,9 @@ def disable_memprof():
 def enable_file_output():
     global_line_profiler.set_file_output(True)
 
+def enable_data_export():
+    global_line_profiler.set_data_export(True)
+
 
 def memprof(columns = base_columns):
     def decorator(func):

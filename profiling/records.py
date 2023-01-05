@@ -59,7 +59,10 @@ class Records:
         code = []
         for code_hash in calls.keys():
             func = calls[code_hash]['func']
-            lines, start_line = inspect.getsourcelines(func)
+            if not hasattr(func, 'lines') or not hasattr(func, 'start_line'): #Checking this so we can also use pickled objects with a simplified func obfect
+                lines, start_line = inspect.getsourcelines(func)
+            else:
+                lines, start_line = func.lines, func.start_line
             lines = list(zip([code_hash]*len(lines), [func.__qualname__]*len(lines), lines, range(start_line, start_line + len(lines))))
             code = code + lines
         self._code = pd.DataFrame(code, columns = ['code_hash', 'func_name', 'code', 'line'])
