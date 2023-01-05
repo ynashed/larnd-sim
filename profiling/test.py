@@ -1,5 +1,5 @@
 import torch
-from .profiling import memprof, disable_memprof
+from .profiling import memprof, disable_memprof, enable_file_output
 
 
 @memprof(columns=('active_bytes.all.peak', 'reserved_bytes.all.peak', 'active_bytes.all.current', 'time'))
@@ -19,4 +19,5 @@ def inner_func(tensor):
 
 if __name__ == '__main__':
     # disable_memprof()
+    enable_file_output()
     test_func()

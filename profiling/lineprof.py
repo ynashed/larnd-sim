@@ -12,6 +12,7 @@ class LineProf:
         self._raw_line_records = []
         self.enabled = False
         self.registered = {}
+        self.file_output = False
         for func in functions:
             self.add_function(func)
 
@@ -63,6 +64,9 @@ class LineProf:
         self.enabled = False
         sys.settrace(None)
 
+    def set_file_output(self, val):
+        self.file_output = bool(val)
+
     def clear(self):
         self._code_infos = {}
         self._raw_line_records = []
@@ -93,13 +97,23 @@ class LineProf:
                 code_info['prev_line'] = code_info['first_line']
                 code_info['prev_record'] = -1
 
-    def print_stats(self, stream=sys.stdout):
+    def print_stats(self):
         if not self.enabled or not self._raw_line_records or not self._code_infos:
             return
 
         records = Records(self._raw_line_records, self._code_infos)
         print(f"Starting to analyze the memory records ; got {len(self._raw_line_records)} records for {len(self.registered)} functions to analyze\n")
 
+        ofilename = None
+        if self.file_output:
+            ofilename = f"memprof_{time.strftime('%Y%m%d-%H%M%S')}.txt"
+            print(f"Writing memprof output in {ofilename}")
+
         for code_hash, columns in self.registered.items():
             func = self._code_infos[code_hash]['func']
-            stream.write(str(records.display(func, columns)))
+            ostring = str(records.display(func, columns))
+            sys.stdout.write(ostring)
+            if ofilename:
+                with open(ofilename, 'a') as f:
+                    f.write(ostring)
+

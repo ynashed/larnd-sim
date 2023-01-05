@@ -24,6 +24,9 @@ def disable_memprof():
     print("Disabling the memory line profiler")
     global_line_profiler.disable()
 
+def enable_file_output():
+    global_line_profiler.set_file_output(True)
+
 
 def memprof(columns = base_columns):
     def decorator(func):
