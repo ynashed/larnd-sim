@@ -56,7 +56,7 @@ class detsim(consts):
         time_max = (ep.max(t_length / self.t_sampling + 1))
         return track_starts, time_max.raw
 
-    @memprof()
+
     def z_interval(self, start_point, end_point, x_p, y_p, tolerance, eps=1e-12):
         """
         Here we calculate the interval in the drift direction for the pixel pID
@@ -137,7 +137,7 @@ class detsim(consts):
         # Using torch here, otherwise we get overflow -- might be able to get around with a trick
         return ep.astensor(torch.sigmoid(x.raw))
 
-    @memprof()
+
     def rho(self, point, q, start, sigmas, segment):
         """
         Function that returns the amount of charge at a certain point in space
@@ -351,6 +351,7 @@ class detsim(consts):
         return total_current.sum(axis=(3, 4, 5)).raw
 
 
+    @mamprof()
     def tracks_current(self, pixels, tracks, time_max, fields):
         """
         This function calculates the charge induced on the pixels by the input tracks.
