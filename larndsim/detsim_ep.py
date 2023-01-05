@@ -351,7 +351,7 @@ class detsim(consts):
         return total_current.sum(axis=(3, 4, 5)).raw
 
 
-    @mamprof()
+    @memprof()
     def tracks_current(self, pixels, tracks, time_max, fields):
         """
         This function calculates the charge induced on the pixels by the input tracks.

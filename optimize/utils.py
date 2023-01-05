@@ -2,6 +2,7 @@ import numpy as np
 from numpy.lib import recfunctions as rfn
 import torch
 from soft_dtw_cuda import SoftDTW
+from profiling.profiling import memprof
 
 def torch_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)
