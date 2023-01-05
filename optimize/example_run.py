@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
-from profiling.profiling import disable_memprof
+from profiling.profiling import disable_memprof, enable_file_output
 
 def make_param_list(config):
     if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
@@ -23,9 +23,11 @@ def make_param_list(config):
 
 
 def main(config):
-    
+
     if not config.memprof:
         disable_memprof()
+    else:
+        enable_file_output()
 
     iterations = config.iterations
     max_nbatch = config.max_nbatch
