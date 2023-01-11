@@ -279,8 +279,8 @@ class detsim(consts):
         pix_y = pixels[..., 1] * self.pixel_pitch + borders[..., 1, 0]
         return pix_x[...,ep.newaxis], pix_y[...,ep.newaxis]
 
-    @memprof()
     @to_profile
+    @memprof()
     def calc_total_current(self, x_start, y_start, z_start,
                            z_end, z_start_int, z_end_int, z_poca, 
                            x_p, y_p, x_step, y_step, borders, direction, sigmas, tracks_ep, start, segment, time_tick, vdrift):
@@ -359,9 +359,8 @@ class detsim(consts):
         
         return total_current.sum(axis=(3, 4, 5)).raw
 
-
-    @memprof()
     @to_profile
+    @memprof()
     def tracks_current(self, pixels, tracks, time_max, fields):
         """
         This function calculates the charge induced on the pixels by the input tracks.
@@ -455,8 +454,8 @@ class detsim(consts):
         
         return signals.raw
 
-    @memprof()
     @to_profile
+    @memprof()
     def sum_pixel_signals(self, pixels_signals, signals, track_starts, index_map):
         """
         This function sums the induced current signals on the same pixel.
