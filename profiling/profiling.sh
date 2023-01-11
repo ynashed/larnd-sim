@@ -22,4 +22,5 @@ singularity exec -B /sdf --nv ${SIF_FILE} \
     --lr 1e-2 \
     --seed ${seed} \
     --optimizer_fn Adam \
-    --loss_fn SDTW
+    --loss_fn SDTW \
+    --cpuprof

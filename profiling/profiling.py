@@ -19,9 +19,11 @@ global_cpuprof_bool = False
 base_columns = ('active_bytes.all.peak', 'reserved_bytes.all.peak')
 
 def enable_cpuprof():
+    global global_cpuprof_bool
     global_cpuprof_bool = True
 
 def get_cpuprof_enable():
+    global global_cpuprof_bool
     return global_cpuprof_bool
 
 def clear_global_line_profiler():

@@ -29,6 +29,9 @@ def main(config):
     else:
         enable_file_output()
 
+    if config.cpuprof:
+        enable_cpuprof()
+
     iterations = config.iterations
     max_nbatch = config.max_nbatch
 
