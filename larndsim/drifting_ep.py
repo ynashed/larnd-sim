@@ -7,6 +7,7 @@ import eagerpy as ep
 import numpy as np
 
 from .consts_ep import consts
+from profiling.profiling import to_profile
 
 import logging
 
@@ -20,6 +21,7 @@ class drift(consts):
     def __init__(self):
         consts.__init__(self)
 
+    @to_profile
     def drift(self, tracks, fields):
         """
         This function takes as input an array of track segments and calculates

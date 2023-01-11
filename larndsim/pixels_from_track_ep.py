@@ -7,6 +7,7 @@ pixels.
 import eagerpy as ep
 import numpy as np
 from math import ceil
+from profiling.profiling import to_profile
 
 from .consts_ep import consts
 
@@ -21,6 +22,7 @@ class pixels_from_track(consts):
     def __init__(self):
         consts.__init__(self)
 
+    @to_profile
     def get_pixels(self, tracks, fields):
         """
         For all tracks, takes the xy start and end position
@@ -59,7 +61,7 @@ class pixels_from_track(consts):
         neighboring_pixels, n_pixels_list = self.get_neighboring_pixels(active_pixels, max_radius + 1, max_pixels)
         return active_pixels.raw, neighboring_pixels.raw, n_pixels_list
 
-
+    @to_profile
     def _bresenhamline_nslope(self, slope, eps=1e-12):
         """
         Normalize slope for Bresenham's line algorithm.
@@ -68,7 +70,7 @@ class pixels_from_track(consts):
         normalized_slope = slope / (scale + eps)
         return normalized_slope, scale
 
-
+    @to_profile
     def get_active_pixels(self, start, end, max_pixels):
         """
         Converts track segement to an array of active pixels
@@ -94,7 +96,7 @@ class pixels_from_track(consts):
         # TODO: check if plane_id is important
         return tot_pixels
 
-
+    @to_profile
     def get_neighboring_pixels(self, active_pixels, radius, max_pixels):
         """
          For each active_pixel, it includes all
