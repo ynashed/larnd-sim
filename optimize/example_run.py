@@ -40,7 +40,7 @@ def main(config):
             max_nbatch = iterations
 
     dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
-                            track_len_sel=config.track_len_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input)
+                            track_len_sel=config.track_len_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input, track_list=config.track_list)
 
     batch_sz = config.batch_sz
     if config.max_batch_len is not None and batch_sz != 1:

@@ -54,7 +54,7 @@ class TracksDataset(Dataset):
         if track_list:
             fit_index = track_list
             fit_tracks = []
-            for t in tracks_of_interest:
+            for t in track_list:
                 try:
                     i = index.index(t)
                 except ValueError:

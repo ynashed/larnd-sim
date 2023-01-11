@@ -23,4 +23,5 @@ singularity exec -B /sdf --nv ${SIF_FILE} \
     --seed ${seed} \
     --optimizer_fn Adam \
     --loss_fn SDTW \
-    --cpuprof
+    --memprof \
+    --add_track 58 8
