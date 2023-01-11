@@ -6,6 +6,7 @@ through the detector
 import eagerpy as ep
 
 from .consts_ep import consts
+from profiling.profiling import to_profile
 
 import logging
 
@@ -18,6 +19,7 @@ class quench(consts):
     def __init__(self):
         consts.__init__(self)
 
+    @to_profile
     def quench(self, tracks, mode, fields):
         """
         This function takes as input an (unstructured) array of track segments and calculates

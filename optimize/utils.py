@@ -2,7 +2,7 @@ import numpy as np
 from numpy.lib import recfunctions as rfn
 import torch
 from soft_dtw_cuda import SoftDTW
-from profiling.profiling import memprof
+from profiling.profiling import memprof, to_profile
 
 def torch_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)
@@ -39,6 +39,7 @@ def get_id_map(selected_tracks, fields, device):
     return event_id_map_torch, unique_eventIDs
 
 @memprof()
+@to_profile
 def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_unique_pix=False):
     selected_tracks_quench = sim.quench(selected_tracks, sim.birks, fields=fields)
     selected_tracks_drift = sim.drift(selected_tracks_quench, fields=fields)
