@@ -7,8 +7,9 @@ import numpy as np
 from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
 from larndsim.sim_with_grad import sim_with_grad
-from profiling.profiling import memprof
+from profiling.profiling import memprof, get_cpuprof_enable
 import torch
+from torch.profiler import profile, ProfilerActivity
 
 from tqdm import tqdm
 
@@ -266,20 +267,30 @@ class ParamFitter:
                             setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
                             print(param, getattr(self.sim_physics, param))
 
+                        # Set the profiler context-manager if needed
+                        if get_cpuprof_enable():
+                            context = profile(activities=[ProfilerActivity.CPU])
+                        else:
+                            context = memoryview(b'') #Workaround to get a no-op context (python>3.2)
+
                         # Simulate and get output
-                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
-                                                  event_id_map, unique_eventIDs,
-                                                  return_unique_pix=True)
+                        with context as prof:
+                            output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
+                                                      event_id_map, unique_eventIDs,
+                                                      return_unique_pix=True)
 
-                        # Embed both output and target into "full" image space
-                        embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
+                            # Embed both output and target into "full" image space
+                            embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
 
-                        # Calc loss between simulated and target + backprop
-                        loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
+                            # Calc loss between simulated and target + backprop
+                            loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
 
-                        # To be investigated -- sometimes we get nans. Avoid doing a step if so
-                        if not loss.isnan():
-                            loss_ev.append(loss)
+                            # To be investigated -- sometimes we get nans. Avoid doing a step if so
+                            if not loss.isnan():
+                                loss_ev.append(loss)
+
+                        if get_cpuprof_enable():
+                            prof.events().export_chrome_trace("profiling.trace")
 
                     # Backpropagate the parameter(s) per batch
                     if len(loss_ev) > 0:

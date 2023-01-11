@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
-from profiling.profiling import disable_memprof, enable_file_output
+from profiling.profiling import disable_memprof, enable_file_output, enable_cpuprof
 
 def make_param_list(config):
     if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
@@ -143,6 +143,10 @@ if __name__ == '__main__':
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
     parser.add_argument("--memprof", dest="memprof", default=False, action="store_true", 
                         help="Toggles the memory line profiling.")
+    parser.add_argument("--cpuprof", dest="cpuprof", default=False, action="store_true",
+                        help="Toggles the PyTorch CPU profiling of the main loop.")
+    parser.add_argument("--add_track", dest='track_list', type=int, nargs='+', action='append',
+                        help="Add a track to specifically consider for the analysis with the format EVENT_ID TRACK_ID. Can be used multiple times.")
 
     try:
         args = parser.parse_args()

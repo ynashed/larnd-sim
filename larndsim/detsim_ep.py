@@ -272,6 +272,7 @@ class detsim(consts):
         pix_y = pixels[..., 1] * self.pixel_pitch + borders[..., 1, 0]
         return pix_x[...,ep.newaxis], pix_y[...,ep.newaxis]
 
+    @memprof()
     def calc_total_current(self, x_start, y_start, z_start,
                            z_end, z_start_int, z_end_int, z_poca, 
                            x_p, y_p, x_step, y_step, borders, direction, sigmas, tracks_ep, start, segment, time_tick, vdrift):
@@ -300,7 +301,7 @@ class detsim(consts):
                                                     - z_start_int) / z_sampling)+1).astype(int))
 
         z_step = (z_end_int - z_start_int) / (z_steps - 1)
-
+        
         iz = ep.arange(z_steps, 0, z_steps.max().item())
         z =  z_start_int[:, :, ep.newaxis] + iz[ep.newaxis, ep.newaxis, :] * z_step[..., ep.newaxis]
 
@@ -445,7 +446,7 @@ class detsim(consts):
         
         return signals.raw
 
-
+    @memprof()
     def sum_pixel_signals(self, pixels_signals, signals, track_starts, index_map):
         """
         This function sums the induced current signals on the same pixel.

@@ -14,7 +14,7 @@ def structured_from_torch(tracks_torch, dtype):
 
 class TracksDataset(Dataset):
     def __init__(self, filename, ntrack, max_nbatch=None, swap_xz=True, seed=3, random_ntrack=False, track_len_sel=2., 
-                 track_z_bound=28., max_batch_len=None, print_input=False):
+                 track_z_bound=28., max_batch_len=None, print_input=False, track_list=None):
 
         with h5py.File(filename, 'r') as f:
             tracks = np.array(f['segments'])
@@ -51,7 +51,17 @@ class TracksDataset(Dataset):
         fit_index = []
         fit_tracks = []
         random.seed(seed)
-        if ntrack is None or ntrack >= len(index) or ntrack <= 0:
+        if track_list:
+            fit_index = track_list
+            fit_tracks = []
+            for t in tracks_of_interest:
+                try:
+                    i = index.index(t)
+                except ValueError:
+                    print("{t} is not a valid track of the dataset!")
+                    raise
+                fit_tracks.append(all_tracks[i])
+        elif ntrack is None or ntrack >= len(index) or ntrack <= 0:
             if random_ntrack:
                 random.shuffle(all_tracks)
             fit_tracks = all_tracks

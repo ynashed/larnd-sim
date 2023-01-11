@@ -14,8 +14,15 @@ def to_profile(function):
 global_line_profiler = LineProf()
 global_line_profiler.enable()
 
+global_cpuprof_bool = False
+
 base_columns = ('active_bytes.all.peak', 'reserved_bytes.all.peak')
 
+def enable_cpuprof():
+    global_cpuprof_bool = True
+
+def get_cpuprof_enable():
+    return global_cpuprof_bool
 
 def clear_global_line_profiler():
     global_line_profiler.clear()
