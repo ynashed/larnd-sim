@@ -225,59 +225,56 @@ class ParamFitter:
         total_iter = 0
         with tqdm(total=pbar_total) as pbar:
             for epoch in range(epochs):
-                # Set the profiler context-manager if needed
-                if get_cpuprof_enable():
-                    context = profile(activities=[ProfilerActivity.CPU])
-                else:
-                    context = memoryview(b'') #Workaround to get a no-op context (python>3.2)
 
-                with context as prof:
+                # Losses for each batch -- used to compute epoch loss
+                losses_batch=[]
+                for i, selected_tracks_bt_torch in enumerate(dataloader):
+                    # Zero gradients
+                    self.optimizer.zero_grad()
 
-                    # Losses for each batch -- used to compute epoch loss
-                    losses_batch=[]
-                    for i, selected_tracks_bt_torch in enumerate(dataloader):
-                        # Zero gradients
-                        self.optimizer.zero_grad()
+                    # Get rid of the extra dimension and padding elements for the loaded data
+                    selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
+                    selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
+                    event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
 
-                        # Get rid of the extra dimension and padding elements for the loaded data
-                        selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
-                        selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
-                        event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
+                    loss_ev = []
+                    # Calculate loss per event
+                    for ev in unique_eventIDs:
+                        selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
+                        selected_tracks_torch = selected_tracks_torch.to(self.device)
 
-                        loss_ev = []
-                        # Calculate loss per event
-                        for ev in unique_eventIDs:
-                            selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
-                            selected_tracks_torch = selected_tracks_torch.to(self.device)
-
-                            if shuffle:
+                        if shuffle:
+                            target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                                                          event_id_map, unique_eventIDs,
+                                                                          return_unique_pix=True)
+                            embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+                        else:
+                            # Simulate target and store them
+                            if epoch == 0:
+                                
                                 target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
                                                                               event_id_map, unique_eventIDs,
                                                                               return_unique_pix=True)
                                 embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+
+                                torch.save(embed_target, 'target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
+
                             else:
-                                # Simulate target and store them
-                                if epoch == 0:
-                                    
-                                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                                                  event_id_map, unique_eventIDs,
-                                                                                  return_unique_pix=True)
-                                    embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+                                embed_target = torch.load('target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
 
-                                    torch.save(embed_target, 'target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
+                        # Undo normalization (sim -> sim_physics)
+                        for param in self.relevant_params_list:
+                            setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
+                            print(param, getattr(self.sim_physics, param))
 
-                                else:
-                                    embed_target = torch.load('target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
+                        # Set the profiler context-manager if needed
+                        if get_cpuprof_enable():
+                            context = profile(activities=[ProfilerActivity.CPU])
+                        else:
+                            context = memoryview(b'') #Workaround to get a no-op context (python>3.2)
 
-                            # Undo normalization (sim -> sim_physics)
-                            for param in self.relevant_params_list:
-                                setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
-                                print(param, getattr(self.sim_physics, param))
-
-                            
-
-                            # Simulate and get output
-                            
+                        # Simulate and get output
+                        with context as prof:
                             output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
                                                       event_id_map, unique_eventIDs,
                                                       return_unique_pix=True)
@@ -292,55 +289,55 @@ class ParamFitter:
                             if not loss.isnan():
                                 loss_ev.append(loss)
 
-                        # Backpropagate the parameter(s) per batch
-                        if len(loss_ev) > 0:
-                            loss_ev_mean = torch.mean(torch.stack(loss_ev))
-                            loss_ev_mean.backward()
-                            if self.fit_diffs:
-                                nan_check = torch.tensor([getattr(self.sim_iter, param+"_diff").grad.isnan() for param in self.relevant_params_list]).sum()
-                            else:
-                                nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
-                            if nan_check == 0:
-                                for param in self.relevant_params_list:
-                                    if self.fit_diffs:
-                                        self.training_history[param+"_grad"].append(getattr(self.sim_iter, param+"_diff").grad.item())
-                                    else:
-                                        self.training_history[param+"_grad"].append(getattr(self.sim_iter, param).grad.item())
-                                if self.max_clip_norm_val is not None:
-                                    if self.fit_diffs:
-                                        torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param+"_diff") for param in self.relevant_params_list],
-                                                                   self.max_clip_norm_val)
-                                    else:
-                                        torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param) for param in self.relevant_params_list],
-                                                                   self.max_clip_norm_val)
-                                self.optimizer.step()
-                                losses_batch.append(loss_ev_mean.item())
-                                self.training_history['losses_iter'].append(loss_ev_mean.item())
-                                for param in self.relevant_params_list:
-                                    self.training_history[param+"_iter"].append(normalize_param(getattr(self.sim_iter, param).item(), 
-                                                                                                param, scheme=self.norm_scheme, undo_norm=True))
+                        if get_cpuprof_enable():
+                            prof.events().export_chrome_trace("profiling.trace")
 
-                                if iterations is not None:
-                                    if total_iter % print_freq == 0:
-                                        for param in self.relevant_params_list:
-                                            print(param, getattr(self.sim_physics,param).item())
-                                        
-                                    if total_iter % save_freq == 0:
-                                        with open(f'history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
-                                            pickle.dump(self.training_history, f_history)
+                    # Backpropagate the parameter(s) per batch
+                    if len(loss_ev) > 0:
+                        loss_ev_mean = torch.mean(torch.stack(loss_ev))
+                        loss_ev_mean.backward()
+                        if self.fit_diffs:
+                            nan_check = torch.tensor([getattr(self.sim_iter, param+"_diff").grad.isnan() for param in self.relevant_params_list]).sum()
+                        else:
+                            nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
+                        if nan_check == 0:
+                            for param in self.relevant_params_list:
+                                if self.fit_diffs:
+                                    self.training_history[param+"_grad"].append(getattr(self.sim_iter, param+"_diff").grad.item())
+                                else:
+                                    self.training_history[param+"_grad"].append(getattr(self.sim_iter, param).grad.item())
+                            if self.max_clip_norm_val is not None:
+                                if self.fit_diffs:
+                                    torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param+"_diff") for param in self.relevant_params_list],
+                                                               self.max_clip_norm_val)
+                                else:
+                                    torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param) for param in self.relevant_params_list],
+                                                               self.max_clip_norm_val)
+                            self.optimizer.step()
+                            losses_batch.append(loss_ev_mean.item())
+                            self.training_history['losses_iter'].append(loss_ev_mean.item())
+                            for param in self.relevant_params_list:
+                                self.training_history[param+"_iter"].append(normalize_param(getattr(self.sim_iter, param).item(), 
+                                                                                            param, scheme=self.norm_scheme, undo_norm=True))
 
-                                        if os.path.exists(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl'):
-                                            os.remove(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl') 
+                            if iterations is not None:
+                                if total_iter % print_freq == 0:
+                                    for param in self.relevant_params_list:
+                                        print(param, getattr(self.sim_physics,param).item())
+                                    
+                                if total_iter % save_freq == 0:
+                                    with open(f'history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
+                                        pickle.dump(self.training_history, f_history)
 
-                        total_iter += 1
-                        pbar.update(1)
-                        
-                        if iterations is not None:
-                            if total_iter >= iterations:
-                                break
+                                    if os.path.exists(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl'):
+                                        os.remove(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl') 
 
-                if get_cpuprof_enable():
-                    prof.events().export_chrome_trace("profiling.trace")
+                    total_iter += 1
+                    pbar.update(1)
+                    
+                    if iterations is not None:
+                        if total_iter >= iterations:
+                            break
 
                 # Print out params at each epoch
                 if epoch % print_freq == 0 and iterations is None:
