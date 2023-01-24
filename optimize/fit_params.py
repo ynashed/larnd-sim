@@ -36,7 +36,8 @@ def normalize_param(param_val, param_name, scheme="divide", undo_norm=False):
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
-                 lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
+                 lr=None, optimizer=None, lr_scheduler=None, lr_kw=None, 
+                 loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
                  no_adc=False, shift_no_fit=[], link_vdrift_eField=False):
 
@@ -129,6 +130,13 @@ class ParamFitter:
 
         else:
             self.optimizer = optimizer
+
+        if lr_scheduler is not None and lr_kw is not None:
+            lr_scheduler_fn = getattr(torch.optim.lr_scheduler, lr_scheduler)
+            self.lr_scheduler = lr_scheduler_fn(self.optimizer, **lr_kw)
+            print(f"Using learning rate scheduler {lr_scheduler}")
+        else:
+            self.lr_scheduler = None
 
         # Set up loss function -- can pass in directly, or choose a named one
         if loss_fn is None or loss_fn == "space_match":
@@ -314,17 +322,17 @@ class ParamFitter:
                                 self.training_history[param+"_iter"].append(normalize_param(getattr(self.sim_iter, param).item(), 
                                                                                             param, scheme=self.norm_scheme, undo_norm=True))
 
-                            if iterations is not None:
-                                if total_iter % print_freq == 0:
-                                    for param in self.relevant_params_list:
-                                        print(param, getattr(self.sim_physics,param).item())
-                                    
-                                if total_iter % save_freq == 0:
-                                    with open(f'fit_result/history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
-                                        pickle.dump(self.training_history, f_history)
+                    if iterations is not None:
+                        if total_iter % print_freq == 0:
+                            for param in self.relevant_params_list:
+                                print(param, getattr(self.sim_physics,param).item())
+                            
+                        if total_iter % save_freq == 0:
+                            with open(f'fit_result/history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
+                                pickle.dump(self.training_history, f_history)
 
-                                    if os.path.exists(f'fit_result/history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl'):
-                                        os.remove(f'fit_result/history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl') 
+                            if os.path.exists(f'fit_result/history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl'):
+                                os.remove(f'fit_result/history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl') 
 
                     total_iter += 1
                     pbar.update(1)
@@ -332,6 +340,9 @@ class ParamFitter:
                     if iterations is not None:
                         if total_iter >= iterations:
                             break
+
+                if self.lr_scheduler is not None:
+                    self.lr_scheduler.step()
 
                 # Print out params at each epoch
                 if epoch % print_freq == 0 and iterations is None:
@@ -352,10 +363,11 @@ class ParamFitter:
                     if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
                         os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl') 
 
-        with open(f'fit_result/history_{param}_{self.out_label}.pkl', "wb") as f_history:
-            pickle.dump(self.training_history, f_history)
-            if os.path.exists(f'fit_result/history_{param}_epoch{iterations-save_freq}_{self.out_label}.pkl'):
-                os.remove(f'fit_result/history_{param}_epoch{iterations-save_freq}_{self.out_label}.pkl')
+        if iterations is None:
+            with open(f'fit_result/history_{param}_{self.out_label}.pkl', "wb") as f_history:
+                pickle.dump(self.training_history, f_history)
+                if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
+                    os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl')
 
     def loss_scan_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
 
