@@ -1,5 +1,5 @@
 import torch
-from .profiling import memprof, disable_memprof, enable_file_output, enable_data_export
+from .profiling import memprof, disable_memprof, enable_file_output, enable_data_export, global_line_profiler
 
 @memprof(columns=
     ('active_bytes.all.peak',
@@ -11,6 +11,7 @@ def test_func():
 
     C = A + B
     for i in range(3):
+        global_line_profiler.add_note({'iter': i})
         D = inner_func(C)
 
 @memprof(columns=

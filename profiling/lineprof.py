@@ -19,6 +19,7 @@ class LineProf:
         self._raw_line_records = []
         self.enabled = False
         self.registered = {}
+        self.notes = []
         self.file_output = False
         self.export_data = False
         for func in functions:
@@ -50,6 +51,10 @@ class LineProf:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.disable()
+
+    def add_note(self, note: dict) -> None:
+        note['time'] = time.time_ns()
+        note['prev_record'] = len(self._raw_line_records)
 
     def register_callback(self):
         if self._code_infos:
@@ -85,7 +90,7 @@ class LineProf:
     def has_registered(self):
         return bool(self.registered)
 
-    def export(self, fname):
+    def export(self, fname: str) -> None:
         # Pickle does not want to pickle the function objects that are decorated... so we need to save only part of the info
         import pickle
         import inspect
@@ -95,7 +100,8 @@ class LineProf:
 
         to_export = {
             'line_records': self._raw_line_records,
-            'code_infos': simplified_code_infos
+            'code_infos': simplified_code_infos,
+            'notes': self.notes
         }
 
 
