@@ -55,6 +55,7 @@ class LineProf:
     def add_note(self, note: dict) -> None:
         note['time'] = time.time_ns()
         note['prev_record'] = len(self._raw_line_records)
+        self.notes.append(note)
 
     def register_callback(self):
         if self._code_infos:

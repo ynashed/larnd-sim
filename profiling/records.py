@@ -108,15 +108,14 @@ class Records:
         acc_corr, peak_corr = acc_raw.copy(), peak_raw.copy()
         prev_time = self._records.time[0]
 
-        elapsed_time = self._records.time.copy()
+        elapsed_time = self._records.time.diff()
 
         for row, record in self._records.iterrows():
-            elapsed_time[row] = record.time - prev_time
-            prev_time = record.time
             if record['prev_record_idx'] == -1 or record['prev_record_idx'] == row-1:
                 continue
             acc_corr[row] = acc_raw[record['prev_record_idx']+1:row+1].sum(0)
             peak_corr[row] = peak_raw[record['prev_record_idx']+1:row+1].max(0)
+            elapsed_time[row] = elapsed_time[record['prev_record_idx']+1:row+1].sum(0)
 
         self._records.loc[:, acc_mask] = acc_corr
         self._records.loc[:, peak_mask] = peak_corr
