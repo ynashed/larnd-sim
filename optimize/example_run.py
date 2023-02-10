@@ -5,10 +5,12 @@ import yaml
 import sys, os
 import traceback
 from torch.utils.data import DataLoader
+import json
+import numpy as np
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
-from profiling.profiling import disable_memprof, enable_file_output, enable_cpuprof
+from profiling.profiling import disable_memprof, enable_file_output, enable_cpuprof, enable_data_export
 
 def make_param_list(config):
     if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
@@ -28,9 +30,13 @@ def main(config):
         disable_memprof()
     else:
         enable_file_output()
+        enable_data_export()
 
     if config.cpuprof:
         enable_cpuprof()
+
+    if config.print_input:
+        print("fit label: ", config.out_label)
 
     iterations = config.iterations
     max_nbatch = config.max_nbatch
@@ -40,7 +46,7 @@ def main(config):
             max_nbatch = iterations
 
     dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
-                            track_len_sel=config.track_len_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input, track_list=config.track_list)
+track_len_sel=config.track_len_sel, max_abs_costheta_sel=config.max_abs_costheta_sel, min_abs_segz_sel=config.min_abs_segz_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input, track_list=config.track_list)
 
     batch_sz = config.batch_sz
     if config.max_batch_len is not None and batch_sz != 1:
@@ -63,7 +69,9 @@ def main(config):
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
                             out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val,
                             fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn,
-                            no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit)
+                            lr_scheduler=config.lr_scheduler, lr_kw=config.lr_kw,
+                            no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit,
+                            link_vdrift_eField=config.link_vdrift_eField)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
     param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
@@ -116,6 +124,10 @@ if __name__ == '__main__':
                         help="Flag of whether sampling the tracks randomly or sequentially")
     parser.add_argument("--track_len_sel", dest="track_len_sel", default=2., type=float,
                         help="Track selection requirement on track length.")
+    parser.add_argument("--max_abs_costheta_sel", dest="max_abs_costheta_sel", default=0.966, type=float,
+                        help="Theta is the angle of track wrt to the z axis. Remove tracks which are very colinear with z.")
+    parser.add_argument("--min_abs_segz_sel", dest="min_abs_segz_sel", default=15., type=float,
+                        help="Remove track segments that are close to the cathode.")
     parser.add_argument("--track_z_bound", dest="track_z_bound", default=28., type=float,
                         help="Set z bound to keep healthy set of tracks")
     parser.add_argument("--out_label", dest="out_label", default="",
@@ -130,6 +142,10 @@ if __name__ == '__main__':
                         help="Turns on fitting of differences rather than direct fitting of values")
     parser.add_argument("--optimizer_fn", dest="optimizer_fn", default="Adam",
                         help="Choose optimizer function (here Adam vs SGD")
+    parser.add_argument("--lr_scheduler", dest="lr_scheduler", default=None,
+                        help="Schedule learning rate, e.g. ExponentialLR")
+    parser.add_argument("--lr_kw", dest="lr_kw", default=None, type=json.loads,
+                        help="kwargs for learning rate scheduler, as string dict")
     parser.add_argument("--no_adc", dest="no_adc", default=False, action="store_true",
                         help="Don't include ADC in loss (e.g. for vdrift)")
     parser.add_argument("--iterations", dest="iterations", default=None, type=int,
@@ -144,6 +160,8 @@ if __name__ == '__main__':
                         help="print the event and track id per batch.")
     parser.add_argument("--shift-no-fit", dest="shift_no_fit", default=[], nargs="+", 
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
+    parser.add_argument("--link-vdrift-eField", dest="link_vdrift_eField", default=False, action="store_true",
+                        help="Link vdrift and eField in fitting")
     parser.add_argument("--memprof", dest="memprof", default=False, action="store_true", 
                         help="Toggles the memory line profiling.")
     parser.add_argument("--cpuprof", dest="cpuprof", default=False, action="store_true",

@@ -9,6 +9,7 @@ from .consts_ep import consts
 from profiling.profiling import to_profile
 
 import logging
+from profiling.profiling import memprof
 
 logging.basicConfig()
 logger = logging.getLogger('quenching')

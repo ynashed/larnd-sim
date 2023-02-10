@@ -95,7 +95,7 @@ class LineProf:
     def has_registered(self):
         return bool(self.registered)
 
-    def export(self, fname: str) -> None:
+    def export(self, fname):
         # Pickle does not want to pickle the function objects that are decorated... so we need to save only part of the info
         import pickle
         import inspect

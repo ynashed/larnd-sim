@@ -9,7 +9,7 @@ import torch
 
 from tqdm import tqdm
 from .consts_ep import consts
-from profiling.profiling import to_profile
+from profiling.profiling import to_profile, memprof
 
 
 class fee(consts):
@@ -44,6 +44,7 @@ class fee(consts):
             self.UNCORRELATED_NOISE_CHARGE = 0
 
     @to_profile
+    @memprof()
     def digitize(self, integral_list):
         """
         The function takes as input the integrated charge and returns the digitized
@@ -62,6 +63,7 @@ class fee(consts):
         return adcs.raw
 
     @to_profile
+    @memprof()
     def get_adc_values(self, pixels_signals, time_ticks, time_padding):
         """
         Implementation of self-trigger logic

@@ -8,10 +8,12 @@ import numpy as np
 from math import pi, ceil, sqrt, erf, exp, log, floor
 from torch.utils import checkpoint
 from profiling.profiling import memprof, to_profile
+import time
 
 from .consts_ep import consts
 from .fee_ep import fee
 from .utils import diff_arange
+from profiling.profiling import memprof, global_line_profiler
 
 import logging
 
@@ -201,17 +203,29 @@ class detsim(consts):
         To shift and/or scale the distribution use the `loc` and `scale` parameters.
         """
         y = (x - loc) / scale
+
+        
          
         if self.smooth:
             # Use smoothed mask to make derivatives nicer
             # y cutoff stops exp from blowing up -- should be far enough away from 0 that sigmoid is small
             y = ep.maximum(y, y_cutoff)
-            return self.sigmoid(rate*y)*ep.exp(-y) / scale
+            # torch.cuda.reset_peak_memory_stats()
+            # torch.cuda.reset_accumulated_memory_stats()
+            res = self.sigmoid(rate*y)*ep.exp(-y) / scale
+            # global_line_profiler.add_note({
+            #         'event': 'truncexpon',
+            #         'y': y.raw.size(),
+            #         'time': time.time_ns(),
+            #         **torch.cuda.memory_stats()
+            #     })
+            return res
         else:
             # Make everything positive and then mask to avoid nans
             return (ep.exp(-ep.abs(y)) * (y>0)) / scale
 
     @to_profile
+    # @memprof()
     def current_model(self, t, t0, x, y):
         """
         Parametrization of the induced current on the pixel, which depends
@@ -233,6 +247,14 @@ class detsim(consts):
         C_params = (0.679, -1.083, -1.083, 8.772, -5.521, -5.521)
         D_params = (2.644, -9.174, -9.174, 13.483, 45.887, 45.887)
         t0_params = (2.948, -2.705, -2.705, 4.825, 20.814, 20.814)
+
+        global_line_profiler.add_note({
+                'event': 'record_dims',
+                't': t.raw.size(),
+                't0': t0.raw.size(),
+                'x': x.raw.size(),
+                'y': y.raw.size(),
+            })
 
         a = B_params[0] + B_params[1] * x + B_params[2] * y + B_params[3] * x * y + B_params[4] * x * x + B_params[
             5] * y * y
@@ -361,7 +383,7 @@ class detsim(consts):
 
     @to_profile
     @memprof()
-    def tracks_current(self, pixels, nb_pixels, tracks, time_max, fields):
+    def tracks_current(self, pixels, npixels, tracks, time_max, fields):
         """
         This function calculates the charge induced on the pixels by the input tracks.
 
@@ -411,6 +433,17 @@ class detsim(consts):
                                    ep.full_like(sigmas[:, 0], sqrt(self.pixel_pitch ** 2 + self.pixel_pitch ** 2) / 2)) * 2
         z_poca, z_start, z_end = self.z_interval(start, end, x_p, y_p, impact_factor)
 
+        global_line_profiler.add_note({
+                'event': 'z_interval',
+                'start': start.raw,
+                'end': end.raw,
+                'x_p': x_p.raw,
+                'impact_factor': impact_factor.raw,
+                'z_poca': z_poca.raw,
+                'z_start': z_start.raw,
+                'z_end': z_end.raw
+            })
+
         z_start_int = z_start - 4 * sigmas[:, 2][...,ep.newaxis]
         z_end_int = z_end + 4 * sigmas[:, 2][...,ep.newaxis]
 
@@ -432,10 +465,12 @@ class detsim(consts):
         signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max.astype(int).item()))
         for it in range(0, z_start.shape[0], self.track_chunk):
             it_end = min(it + self.track_chunk, z_start.shape[0])
-            for ip in range(0, z_start.shape[1], self.pixel_chunk):
+            for ip in range(0, min(npixels[it], z_start.shape[1]), self.pixel_chunk):
                 ip_end = min(ip + self.pixel_chunk, z_start.shape[1])
+                # print(npixels[it], z_start.shape[1], ip_end)
                 if tracks_ep.raw.grad_fn is not None:
                     # Torch checkpointing needs torch tensors for both input and output
+                    global_line_profiler.add_note({'event': 'checkpoint', 'it': it, 'ip': ip})
                     current_sum = checkpoint.checkpoint(self.calc_total_current, 
                                                      *(x_start[it:it_end, ip:ip_end].raw, y_start[it:it_end, ip:ip_end].raw, z_start.raw, 
                                                        z_end.raw, z_start_int[it:it_end, ip:ip_end].raw, z_end_int[it:it_end, ip:ip_end].raw, z_poca[it:it_end, ip:ip_end].raw, 

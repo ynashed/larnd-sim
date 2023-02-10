@@ -10,6 +10,7 @@ from math import ceil
 from profiling.profiling import to_profile
 
 from .consts_ep import consts
+from profiling.profiling import memprof
 
 import logging
 
