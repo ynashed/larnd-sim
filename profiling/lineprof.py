@@ -22,6 +22,9 @@ class LineProf:
         self.notes = []
         self.file_output = False
         self.export_data = False
+        self.checkpoint_name = None
+        self.checkpoint_id = 0
+        self.nb_checkpointed_records = 0
         for func in functions:
             self.add_function(func)
 
@@ -54,7 +57,7 @@ class LineProf:
 
     def add_note(self, note: dict) -> None:
         note['time'] = time.time_ns()
-        note['prev_record'] = len(self._raw_line_records)
+        note['prev_record'] = len(self._raw_line_records) + self.nb_checkpointed_records
         self.notes.append(note)
 
     def register_callback(self):
@@ -87,6 +90,7 @@ class LineProf:
     def clear(self):
         self._code_infos = {}
         self._raw_line_records = []
+        self.notes = []
 
     def has_registered(self):
         return bool(self.registered)
@@ -128,13 +132,18 @@ class LineProf:
 
             if event == 'line':
                 code_info['prev_line'] = frame.f_lineno
-                code_info['prev_record'] = len(self._raw_line_records)-1
+                code_info['prev_record'] = self.nb_checkpointed_records + len(self._raw_line_records)-1
             elif event == 'return':
                 code_info['prev_line'] = code_info['first_line']
                 code_info['prev_record'] = -1
 
     def print_stats(self):
         if not self.enabled or not self._raw_line_records or not self._code_infos:
+            return
+
+        if self.checkpoint_name is not None:
+            print("Checkpointing activated! Will only save the records as pkl with no report! Now doing a last checkpoint to save the last data.")
+            self.checkpoint()
             return
 
         records = Records(self._raw_line_records, self._code_infos)
@@ -157,4 +166,18 @@ class LineProf:
             if ofilename:
                 with open(ofilename, 'a') as f:
                     f.write(ostring)
+
+    def checkpoint(self):
+        if self.checkpoint_name is None:
+            self.checkpoint_name = time.strftime('%Y%m%d-%H%M%S')
+
+        filename = f"{self.checkpoint_name}_{self.checkpoint_id}.pkl"
+        self.export(filename)
+
+        print(f"Checkpointed in file {filename}")
+
+        self.checkpoint_id += 1
+        self.nb_checkpointed_records += len(self._raw_line_records)
+        self._raw_line_records = []
+        self.notes = []
 

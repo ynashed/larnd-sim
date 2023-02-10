@@ -361,7 +361,7 @@ class detsim(consts):
 
     @to_profile
     @memprof()
-    def tracks_current(self, pixels, tracks, time_max, fields):
+    def tracks_current(self, pixels, nb_pixels, tracks, time_max, fields):
         """
         This function calculates the charge induced on the pixels by the input tracks.
 

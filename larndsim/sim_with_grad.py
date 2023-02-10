@@ -12,3 +12,7 @@ class sim_with_grad(quench, drift, pixels_from_track, detsim, fee):
         pixels_from_track.__init__(self)
         detsim.__init__(self, track_chunk, pixel_chunk)
         fee.__init__(self, readout_noise)
+
+    def update_chunk_sizes(self, track_chunk, pixel_chunk):
+        self.track_chunk = track_chunk
+        self.pixel_chunk = pixel_chunk

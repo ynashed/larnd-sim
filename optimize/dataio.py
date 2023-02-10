@@ -12,6 +12,27 @@ def torch_from_structured(tracks):
 def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
+def estimate_peak_memory(tracks, consts):
+    z_diff = np.abs(tracks['z_end'] - tracks['z_start'])
+    x_diff = np.abs(tracks['x_end'] - tracks['x_start'])
+    y_diff = np.abs(tracks['y_end'] - tracks['y_start'])
+
+    cotan2 = (z_diff**2)/(x_diff**2 + y_diff**2)
+    pixel_diagonal = np.sqrt(consts.pixel_pitch ** 2 + consts.pixel_pitch ** 2)
+    sigma_T = np.sqrt(((consts.drift_length + 0.5)/consts.vdrift)*2*consts.tran_diff)
+    sigma_L = np.sqrt(((consts.drift_length + 0.5)/consts.vdrift)*2*consts.long_diff)
+    impact_factor = max(pixel_diagonal, 10*np.sqrt(2)*sigma_T)
+
+    time_max = ((np.max(z_diff) + 0.5)/consts.vdrift + 2*consts.time_padding)/consts.t_sampling + 1
+    t0_size = np.maximum(30, np.max(np.sqrt(1 + cotan2)*impact_factor + 4*sigma_L)*4/consts.t_sampling + 1)
+
+    nb_elts = time_max*t0_size*consts.sampled_points*consts.sampled_points
+
+    nb_bytes_per_elt = 128
+
+    return nb_elts*nb_bytes_per_elt/1024/1024 #Returns in Mio
+
+
 class TracksDataset(Dataset):
     def __init__(self, filename, ntrack, max_nbatch=None, swap_xz=True, seed=3, random_ntrack=False, track_len_sel=2., 
                  track_z_bound=28., max_batch_len=None, print_input=False, track_list=None):
@@ -33,6 +54,7 @@ class TracksDataset(Dataset):
             tracks['z'] = x
 
         self.track_fields = tracks.dtype.names
+        self.track_dtypes = tracks.dtype
 
         # flat index for all reasonable track [eventID, trackID] 
         index = []
@@ -141,4 +163,7 @@ class TracksDataset(Dataset):
         
     def get_track_fields(self):
         return self.track_fields
+
+    def get_track_dtypes(self):
+        return self.track_dtypes
 

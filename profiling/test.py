@@ -13,6 +13,7 @@ def test_func():
     for i in range(3):
         global_line_profiler.add_note({'iter': i})
         D = inner_func(C)
+        global_line_profiler.checkpoint()
 
 @memprof(columns=
     ('active_bytes.all.peak',
