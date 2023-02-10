@@ -7,6 +7,7 @@ import numpy as np
 from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
 from larndsim.sim_with_grad import sim_with_grad
+from profiling.profiling import memprof, global_line_profiler
 import torch
 
 from tqdm import tqdm
@@ -201,7 +202,8 @@ class ParamFitter:
             print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
             setattr(self.sim_target, param, param_val)
 
-            
+    
+    @memprof()
     def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
             save_freq=10, print_freq=1):
         # If explicit number of iterations, scale epochs accordingly
@@ -233,14 +235,28 @@ class ParamFitter:
         else:
             pbar_total = len(dataloader) * epochs
 
+        memory_limit = 28*1024 #28 Gio
+
         # The training loop
         total_iter = 0
         with tqdm(total=pbar_total) as pbar:
+            # to_break = False
             for epoch in range(epochs):
-
+                global_line_profiler.add_note({'event': 'new_epoch', 'epoch': epoch})
+                # if to_break:
+                #     break
                 # Losses for each batch -- used to compute epoch loss
                 losses_batch=[]
                 for i, selected_tracks_bt_torch in enumerate(dataloader):
+                    if i%10 == 0 and i != 0:
+                        global_line_profiler.checkpoint()
+                    # if i > 50:
+                    #     to_break = True
+                    #     break
+                    # if i != 48:
+                    #     continue
+                    global_line_profiler.add_note({'event': 'new_batch', 'batch': i})
+                    
                     # Zero gradients
                     self.optimizer.zero_grad()
 
@@ -251,8 +267,19 @@ class ParamFitter:
 
                     loss_ev = []
                     # Calculate loss per event
-                    for ev in unique_eventIDs:
+                    for ev in unique_eventIDs:     
                         selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
+                        global_line_profiler.add_note({'event': 'new_event', 'ev': ev,
+                                                       'shape': selected_tracks_torch.size(),
+                                                       'dxs': selected_tracks_torch[:, self.track_fields.index("dx")],
+                                                       'x_start': selected_tracks_torch[:, self.track_fields.index("x_start")],
+                                                       'y_start': selected_tracks_torch[:, self.track_fields.index("y_start")],
+                                                       'z_start': selected_tracks_torch[:, self.track_fields.index("z_start")],
+                                                       'x_end': selected_tracks_torch[:, self.track_fields.index("x_end")],
+                                                       'y_end': selected_tracks_torch[:, self.track_fields.index("y_end")],
+                                                       'z_end': selected_tracks_torch[:, self.track_fields.index("z_end")],
+                                                       'trackID': selected_tracks_torch[:, self.track_fields.index("trackID")]
+                                                       })
                         selected_tracks_torch = selected_tracks_torch.to(self.device)
 
                         if shuffle:
@@ -263,11 +290,19 @@ class ParamFitter:
                         else:
                             # Simulate target and store them
                             if epoch == 0:
-                                
-                                target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                                              event_id_map, unique_eventIDs,
-                                                                              return_unique_pix=True)
-                                embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+                                #No need to store gradients for forward-only pass
+                                with torch.no_grad():
+                                    global_line_profiler.add_note({'event': 'sim_ref'})
+                                    #Update chunk sizes based on memory calculations
+                                    estimated_memory = self.sim_target.estimate_peak_memory(selected_tracks_torch, self.track_fields)
+                                    chunk_size = int(memory_limit // estimated_memory)
+                                    print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
+                                    self.sim_target.update_chunk_sizes(1, chunk_size)
+
+                                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                                                                event_id_map, unique_eventIDs,
+                                                                                return_unique_pix=True)
+                                    embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
 
                                 torch.save(embed_target, 'target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
 
@@ -280,6 +315,12 @@ class ParamFitter:
                             print(param, getattr(self.sim_physics, param))
 
                         # Simulate and get output
+                        #Update chunk sizes based on memory calculations
+                        estimated_memory = self.sim_physics.estimate_peak_memory(selected_tracks_torch, self.track_fields)
+                        chunk_size = int(memory_limit // estimated_memory)
+                        print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
+                        self.sim_physics.update_chunk_sizes(1, chunk_size)
+                        global_line_profiler.add_note({'event': 'sim'})
                         output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
                                                   event_id_map, unique_eventIDs,
                                                   return_unique_pix=True)
@@ -288,6 +329,7 @@ class ParamFitter:
                         embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
 
                         # Calc loss between simulated and target + backprop
+                        global_line_profiler.add_note({'event': 'loss'})
                         loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
 
                         # To be investigated -- sometimes we get nans. Avoid doing a step if so
@@ -297,6 +339,7 @@ class ParamFitter:
                     # Backpropagate the parameter(s) per batch
                     if len(loss_ev) > 0:
                         loss_ev_mean = torch.mean(torch.stack(loss_ev))
+                        global_line_profiler.add_note({'event': 'backprop'})
                         loss_ev_mean.backward()
                         if self.fit_diffs:
                             nan_check = torch.tensor([getattr(self.sim_iter, param+"_diff").grad.isnan() for param in self.relevant_params_list]).sum()

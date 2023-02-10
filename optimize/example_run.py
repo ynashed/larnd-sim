@@ -10,6 +10,7 @@ import numpy as np
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
+from profiling.profiling import enable_file_output, enable_data_export
 
 def make_param_list(config):
     if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
@@ -27,6 +28,9 @@ def main(config):
 
     if config.print_input:
         print("fit label: ", config.out_label)
+
+    enable_file_output()
+    enable_data_export()
 
     iterations = config.iterations
     max_nbatch = config.max_nbatch
