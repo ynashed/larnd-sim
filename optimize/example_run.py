@@ -163,6 +163,9 @@ if __name__ == '__main__':
                         help="Toggles the memory line profiling.")
     parser.add_argument("--add_track", dest='track_list', type=int, nargs='+', action='append',
                         help="Add a track to specifically consider for the analysis with the format EVENT_ID TRACK_ID. Can be used multiple times.")
+    parser.add_argument("--batch_memory", dest="batch_memory", type=int, default=None,
+                        help="Optimize the pixel chunk size to reach the specified GPU memory per batch, in MiB")
+
 
     try:
         args = parser.parse_args()

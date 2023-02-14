@@ -40,7 +40,7 @@ class ParamFitter:
                  lr=None, optimizer=None, lr_scheduler=None, lr_kw=None, 
                  loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
-                 no_adc=False, shift_no_fit=[], link_vdrift_eField=False):
+                 no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None):
 
         if optimizer_fn == "Adam":
             self.optimizer_fn = torch.optim.Adam
@@ -53,6 +53,7 @@ class ParamFitter:
         self.no_adc = no_adc
         self.shift_no_fit = shift_no_fit
         self.link_vdrift_eField = link_vdrift_eField
+        self.batch_memory = batch_memory
 
         self.out_label = out_label
         self.norm_scheme = norm_scheme
@@ -202,6 +203,14 @@ class ParamFitter:
             print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
             setattr(self.sim_target, param, param_val)
 
+
+    def optimize_batch_memory(self, sim, tracks) -> None:
+        if self.batch_memory is not None:
+            estimated_memory = sim.estimate_peak_memory(tracks, self.track_fields)
+            chunk_size = int(self.batch_memory // estimated_memory)
+            print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
+            sim.update_chunk_sizes(1, chunk_size)
+
     
     @memprof()
     def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
@@ -234,8 +243,6 @@ class ParamFitter:
             pbar_total = iterations
         else:
             pbar_total = len(dataloader) * epochs
-
-        memory_limit = 28*1024 #28 Gio
 
         # The training loop
         total_iter = 0
@@ -294,10 +301,7 @@ class ParamFitter:
                                 with torch.no_grad():
                                     global_line_profiler.add_note({'event': 'sim_ref'})
                                     #Update chunk sizes based on memory calculations
-                                    estimated_memory = self.sim_target.estimate_peak_memory(selected_tracks_torch, self.track_fields)
-                                    chunk_size = int(memory_limit // estimated_memory)
-                                    print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
-                                    self.sim_target.update_chunk_sizes(1, chunk_size)
+                                    self.optimize_batch_memory(self.sim_target, selected_tracks_torch)
 
                                     target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
                                                                                 event_id_map, unique_eventIDs,
@@ -316,10 +320,7 @@ class ParamFitter:
 
                         # Simulate and get output
                         #Update chunk sizes based on memory calculations
-                        estimated_memory = self.sim_physics.estimate_peak_memory(selected_tracks_torch, self.track_fields)
-                        chunk_size = int(memory_limit // estimated_memory)
-                        print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
-                        self.sim_physics.update_chunk_sizes(1, chunk_size)
+                        self.optimize_batch_memory(self.sim_physics, selected_tracks_torch)
                         global_line_profiler.add_note({'event': 'sim'})
 
                         output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
