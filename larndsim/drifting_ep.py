@@ -7,7 +7,7 @@ import eagerpy as ep
 import numpy as np
 
 from .consts_ep import consts
-from profiling.profiling import to_profile, memprof
+from profiling.profiling import memprof
 
 import logging
 
@@ -21,7 +21,7 @@ class drift(consts):
     def __init__(self):
         consts.__init__(self)
 
-    @to_profile
+
     @memprof()
     def drift(self, tracks, fields):
         """

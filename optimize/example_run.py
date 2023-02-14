@@ -10,7 +10,7 @@ import numpy as np
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
-from profiling.profiling import disable_memprof, enable_file_output, enable_cpuprof, enable_data_export
+from profiling.profiling import disable_memprof, enable_file_output, enable_data_export
 
 def make_param_list(config):
     if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
@@ -31,9 +31,6 @@ def main(config):
     else:
         enable_file_output()
         enable_data_export()
-
-    if config.cpuprof:
-        enable_cpuprof()
 
     if config.print_input:
         print("fit label: ", config.out_label)
@@ -162,10 +159,8 @@ if __name__ == '__main__':
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
     parser.add_argument("--link-vdrift-eField", dest="link_vdrift_eField", default=False, action="store_true",
                         help="Link vdrift and eField in fitting")
-    parser.add_argument("--memprof", dest="memprof", default=False, action="store_true", 
+    parser.add_argument("--memprof", dest="memprof", default=True, action="store_true", 
                         help="Toggles the memory line profiling.")
-    parser.add_argument("--cpuprof", dest="cpuprof", default=False, action="store_true",
-                        help="Toggles the PyTorch CPU profiling of the main loop.")
     parser.add_argument("--add_track", dest='track_list', type=int, nargs='+', action='append',
                         help="Add a track to specifically consider for the analysis with the format EVENT_ID TRACK_ID. Can be used multiple times.")
 

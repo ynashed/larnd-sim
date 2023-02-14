@@ -7,13 +7,12 @@ import torch
 import numpy as np
 from math import pi, ceil, sqrt, erf, exp, log, floor
 from torch.utils import checkpoint
-from profiling.profiling import memprof, to_profile
+from profiling.profiling import memprof, global_line_profiler
 import time
 
 from .consts_ep import consts
 from .fee_ep import fee
 from .utils import diff_arange
-from profiling.profiling import memprof, global_line_profiler
 
 import logging
 
@@ -28,7 +27,6 @@ class detsim(consts):
         self.pixel_chunk = pixel_chunk
         consts.__init__(self)
 
-    @to_profile
     def time_intervals(self, tracks, fields):
         """
         Find the value of the longest signal time and stores the start
@@ -59,7 +57,6 @@ class detsim(consts):
         time_max = (ep.max(t_length / self.t_sampling + 1))
         return track_starts, time_max.raw
 
-    @to_profile
     def z_interval(self, start_point, end_point, x_p, y_p, tolerance, eps=1e-12):
         """
         Here we calculate the interval in the drift direction for the pixel pID
@@ -133,16 +130,16 @@ class detsim(consts):
         z_max_delta = ep.where(cond, ep.maximum(minusDeltaZ, plusDeltaZ), 0)
         return z_poca, z_min_delta, z_max_delta
 
-    @to_profile
+
     def erf_hack(self, input):
         return ep.astensor(torch.erf(input.raw))
 
-    @to_profile
+
     def sigmoid(self, x):
         # Using torch here, otherwise we get overflow -- might be able to get around with a trick
         return ep.astensor(torch.sigmoid(x.raw))
 
-    @to_profile
+
     def rho(self, point, q, start, sigmas, segment):
         """
         Function that returns the amount of charge at a certain point in space
@@ -196,7 +193,7 @@ class detsim(consts):
         # Ask about the x_dist, y_dist > pixel_pitch/2 conditions in the original simulation
         return expo
 
-    @to_profile
+
     def truncexpon(self, x, loc=0, scale=1, y_cutoff=-10., rate=100):
         """
         A truncated exponential distribution.
@@ -224,7 +221,7 @@ class detsim(consts):
             # Make everything positive and then mask to avoid nans
             return (ep.exp(-ep.abs(y)) * (y>0)) / scale
 
-    @to_profile
+
     # @memprof()
     def current_model(self, t, t0, x, y):
         """
@@ -269,7 +266,7 @@ class detsim(consts):
 
         return a * self.truncexpon(-t, -shifted_t0, b) + (1 - a) * self.truncexpon(-t, -shifted_t0, c) 
 
-    @to_profile
+
     def track_point(self, start, direction, z):
         """
         This function returns the segment coordinates for a point along the `z` coordinate
@@ -288,7 +285,7 @@ class detsim(consts):
 
         return xl, yl
 
-    @to_profile
+
     def get_pixel_coordinates(self, pixels):
         """
         Returns the coordinates of the pixel center given the pixel IDs
@@ -301,8 +298,8 @@ class detsim(consts):
         pix_y = pixels[..., 1] * self.pixel_pitch + borders[..., 1, 0]
         return pix_x[...,ep.newaxis], pix_y[...,ep.newaxis]
 
-    @to_profile
-    @memprof()
+
+    # @memprof()
     def calc_total_current(self, x_start, y_start, z_start,
                            z_end, z_start_int, z_end_int, z_poca, 
                            x_p, y_p, x_step, y_step, borders, direction, sigmas, tracks_ep, start, segment, time_tick, vdrift):
@@ -381,7 +378,7 @@ class detsim(consts):
         
         return total_current.sum(axis=(3, 4, 5)).raw
 
-    @to_profile
+
     @memprof()
     def tracks_current(self, pixels, npixels, tracks, time_max, fields):
         """
@@ -489,7 +486,7 @@ class detsim(consts):
         
         return signals.raw
 
-    @to_profile
+
     @memprof()
     def sum_pixel_signals(self, pixels_signals, signals, track_starts, index_map):
         """

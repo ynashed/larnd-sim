@@ -7,9 +7,8 @@ import numpy as np
 from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
 from larndsim.sim_with_grad import sim_with_grad
-from profiling.profiling import memprof, get_cpuprof_enable, global_line_profiler
+from profiling.profiling import memprof, global_line_profiler
 import torch
-from torch.profiler import profile, ProfilerActivity
 
 from tqdm import tqdm
 
@@ -315,12 +314,6 @@ class ParamFitter:
                             setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
                             print(param, getattr(self.sim_physics, param))
 
-                        # Set the profiler context-manager if needed
-                        if get_cpuprof_enable():
-                            context = profile(activities=[ProfilerActivity.CPU])
-                        else:
-                            context = memoryview(b'') #Workaround to get a no-op context (python>3.2)
-
                         # Simulate and get output
                         #Update chunk sizes based on memory calculations
                         estimated_memory = self.sim_physics.estimate_peak_memory(selected_tracks_torch, self.track_fields)
@@ -328,24 +321,21 @@ class ParamFitter:
                         print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
                         self.sim_physics.update_chunk_sizes(1, chunk_size)
                         global_line_profiler.add_note({'event': 'sim'})
-                        with context as prof:
-                            output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
-                                                      event_id_map, unique_eventIDs,
-                                                      return_unique_pix=True)
 
-                            # Embed both output and target into "full" image space
-                            embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
+                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
+                                                    event_id_map, unique_eventIDs,
+                                                    return_unique_pix=True)
 
-                            # Calc loss between simulated and target + backprop
-                            global_line_profiler.add_note({'event': 'loss'})
-                            loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
+                        # Embed both output and target into "full" image space
+                        embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
 
-                            # To be investigated -- sometimes we get nans. Avoid doing a step if so
-                            if not loss.isnan():
-                                loss_ev.append(loss)
+                        # Calc loss between simulated and target + backprop
+                        global_line_profiler.add_note({'event': 'loss'})
+                        loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
 
-                        if get_cpuprof_enable():
-                            prof.events().export_chrome_trace("profiling.trace")
+                        # To be investigated -- sometimes we get nans. Avoid doing a step if so
+                        if not loss.isnan():
+                            loss_ev.append(loss)
 
                     # Backpropagate the parameter(s) per batch
                     if len(loss_ev) > 0:
