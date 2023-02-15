@@ -463,12 +463,12 @@ class detsim(consts):
         signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max.astype(int).item()))
         for it in range(0, z_start.shape[0], self.track_chunk):
             it_end = min(it + self.track_chunk, z_start.shape[0])
-            if self.skip_pixels: # ASSUMES THAT TRACK_CHUNK = 0
+            if not self.skip_pixels:
                 pix_end_range = z_start.shape[1]
-            else:
+            else: # ASSUMES THAT TRACK_CHUNK = 1
                 pix_end_range = min(npixels[it], z_start.shape[1])
             for ip in range(0, pix_end_range, self.pixel_chunk):
-                ip_end = min(ip + self.pixel_chunk, z_start.shape[1])
+                ip_end = min(ip + self.pixel_chunk, pix_end_range)
                 if tracks_ep.raw.grad_fn is not None:
                     # Torch checkpointing needs torch tensors for both input and output
                     global_line_profiler.add_note({'event': 'checkpoint', 'it': it, 'ip': ip})
