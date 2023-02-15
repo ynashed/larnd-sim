@@ -7,7 +7,8 @@ import torch
 import numpy as np
 from math import pi, ceil, sqrt, erf, exp, log, floor
 from torch.utils import checkpoint
-from profiling.profiling import memprof, to_profile
+from profiling.profiling import memprof, global_line_profiler
+import time
 
 from .consts_ep import consts
 from .fee_ep import fee
@@ -21,12 +22,12 @@ logger.setLevel(logging.WARNING)
 logger.info("DETSIM MODULE PARAMETERS")
 
 class detsim(consts):
-    def __init__(self, track_chunk, pixel_chunk):
+    def __init__(self, track_chunk, pixel_chunk, skip_pixels=False):
         self.track_chunk = track_chunk
         self.pixel_chunk = pixel_chunk
+        self.skip_pixels = skip_pixels
         consts.__init__(self)
 
-    @to_profile
     def time_intervals(self, tracks, fields):
         """
         Find the value of the longest signal time and stores the start
@@ -57,7 +58,6 @@ class detsim(consts):
         time_max = (ep.max(t_length / self.t_sampling + 1))
         return track_starts, time_max.raw
 
-    @to_profile
     def z_interval(self, start_point, end_point, x_p, y_p, tolerance, eps=1e-12):
         """
         Here we calculate the interval in the drift direction for the pixel pID
@@ -131,16 +131,16 @@ class detsim(consts):
         z_max_delta = ep.where(cond, ep.maximum(minusDeltaZ, plusDeltaZ), 0)
         return z_poca, z_min_delta, z_max_delta
 
-    @to_profile
+
     def erf_hack(self, input):
         return ep.astensor(torch.erf(input.raw))
 
-    @to_profile
+
     def sigmoid(self, x):
         # Using torch here, otherwise we get overflow -- might be able to get around with a trick
         return ep.astensor(torch.sigmoid(x.raw))
 
-    @to_profile
+
     def rho(self, point, q, start, sigmas, segment):
         """
         Function that returns the amount of charge at a certain point in space
@@ -194,24 +194,36 @@ class detsim(consts):
         # Ask about the x_dist, y_dist > pixel_pitch/2 conditions in the original simulation
         return expo
 
-    @to_profile
+
     def truncexpon(self, x, loc=0, scale=1, y_cutoff=-10., rate=100):
         """
         A truncated exponential distribution.
         To shift and/or scale the distribution use the `loc` and `scale` parameters.
         """
         y = (x - loc) / scale
+
+        
          
         if self.smooth:
             # Use smoothed mask to make derivatives nicer
             # y cutoff stops exp from blowing up -- should be far enough away from 0 that sigmoid is small
             y = ep.maximum(y, y_cutoff)
-            return self.sigmoid(rate*y)*ep.exp(-y) / scale
+            # torch.cuda.reset_peak_memory_stats()
+            # torch.cuda.reset_accumulated_memory_stats()
+            res = self.sigmoid(rate*y)*ep.exp(-y) / scale
+            # global_line_profiler.add_note({
+            #         'event': 'truncexpon',
+            #         'y': y.raw.size(),
+            #         'time': time.time_ns(),
+            #         **torch.cuda.memory_stats()
+            #     })
+            return res
         else:
             # Make everything positive and then mask to avoid nans
             return (ep.exp(-ep.abs(y)) * (y>0)) / scale
 
-    @to_profile
+
+    # @memprof()
     def current_model(self, t, t0, x, y):
         """
         Parametrization of the induced current on the pixel, which depends
@@ -234,6 +246,14 @@ class detsim(consts):
         D_params = (2.644, -9.174, -9.174, 13.483, 45.887, 45.887)
         t0_params = (2.948, -2.705, -2.705, 4.825, 20.814, 20.814)
 
+        global_line_profiler.add_note({
+                'event': 'record_dims',
+                't': t.raw.size(),
+                't0': t0.raw.size(),
+                'x': x.raw.size(),
+                'y': y.raw.size(),
+            })
+
         a = B_params[0] + B_params[1] * x + B_params[2] * y + B_params[3] * x * y + B_params[4] * x * x + B_params[
             5] * y * y
         b = C_params[0] + C_params[1] * x + C_params[2] * y + C_params[3] * x * y + C_params[4] * x * x + C_params[
@@ -247,7 +267,7 @@ class detsim(consts):
 
         return a * self.truncexpon(-t, -shifted_t0, b) + (1 - a) * self.truncexpon(-t, -shifted_t0, c) 
 
-    @to_profile
+
     def track_point(self, start, direction, z):
         """
         This function returns the segment coordinates for a point along the `z` coordinate
@@ -266,7 +286,7 @@ class detsim(consts):
 
         return xl, yl
 
-    @to_profile
+
     def get_pixel_coordinates(self, pixels):
         """
         Returns the coordinates of the pixel center given the pixel IDs
@@ -279,8 +299,8 @@ class detsim(consts):
         pix_y = pixels[..., 1] * self.pixel_pitch + borders[..., 1, 0]
         return pix_x[...,ep.newaxis], pix_y[...,ep.newaxis]
 
-    @to_profile
-    @memprof()
+
+    # @memprof()
     def calc_total_current(self, x_start, y_start, z_start,
                            z_end, z_start_int, z_end_int, z_poca, 
                            x_p, y_p, x_step, y_step, borders, direction, sigmas, tracks_ep, start, segment, time_tick, vdrift):
@@ -359,9 +379,9 @@ class detsim(consts):
         
         return total_current.sum(axis=(3, 4, 5)).raw
 
-    @to_profile
+
     @memprof()
-    def tracks_current(self, pixels, nb_pixels, tracks, time_max, fields):
+    def tracks_current(self, pixels, npixels, tracks, time_max, fields):
         """
         This function calculates the charge induced on the pixels by the input tracks.
 
@@ -411,6 +431,17 @@ class detsim(consts):
                                    ep.full_like(sigmas[:, 0], sqrt(self.pixel_pitch ** 2 + self.pixel_pitch ** 2) / 2)) * 2
         z_poca, z_start, z_end = self.z_interval(start, end, x_p, y_p, impact_factor)
 
+        global_line_profiler.add_note({
+                'event': 'z_interval',
+                'start': start.raw,
+                'end': end.raw,
+                'x_p': x_p.raw,
+                'impact_factor': impact_factor.raw,
+                'z_poca': z_poca.raw,
+                'z_start': z_start.raw,
+                'z_end': z_end.raw
+            })
+
         z_start_int = z_start - 4 * sigmas[:, 2][...,ep.newaxis]
         z_end_int = z_end + 4 * sigmas[:, 2][...,ep.newaxis]
 
@@ -432,10 +463,15 @@ class detsim(consts):
         signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max.astype(int).item()))
         for it in range(0, z_start.shape[0], self.track_chunk):
             it_end = min(it + self.track_chunk, z_start.shape[0])
-            for ip in range(0, z_start.shape[1], self.pixel_chunk):
+            if self.skip_pixels: # ASSUMES THAT TRACK_CHUNK = 0
+                pix_end_range = z_start.shape[1]
+            else:
+                pix_end_range = min(npixels[it], z_start.shape[1])
+            for ip in range(0, pix_end_range, self.pixel_chunk):
                 ip_end = min(ip + self.pixel_chunk, z_start.shape[1])
                 if tracks_ep.raw.grad_fn is not None:
                     # Torch checkpointing needs torch tensors for both input and output
+                    global_line_profiler.add_note({'event': 'checkpoint', 'it': it, 'ip': ip})
                     current_sum = checkpoint.checkpoint(self.calc_total_current, 
                                                      *(x_start[it:it_end, ip:ip_end].raw, y_start[it:it_end, ip:ip_end].raw, z_start.raw, 
                                                        z_end.raw, z_start_int[it:it_end, ip:ip_end].raw, z_end_int[it:it_end, ip:ip_end].raw, z_poca[it:it_end, ip:ip_end].raw, 
@@ -454,7 +490,7 @@ class detsim(consts):
         
         return signals.raw
 
-    @to_profile
+
     @memprof()
     def sum_pixel_signals(self, pixels_signals, signals, track_starts, index_map):
         """

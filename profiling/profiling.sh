@@ -11,17 +11,14 @@ singularity exec -B /sdf --nv ${SIF_FILE} \
     python3 -m optimize.example_run \
     --params ${PARAM} \
     --input_file ${INPUT_FILE} \
-    --data_sz 1 \
-    --batch_sz 1 \
     --no-noise \
     --num_workers 2 \
     --track_len_sel 0 \
     --out_label seed${seed}_${PARAM}_adam_SDTW_lr1e-2_5trk_test \
-    --iterations 1 \
+    --iterations 50 \
     --print_input \
     --lr 1e-2 \
     --seed ${seed} \
     --optimizer_fn Adam \
     --loss_fn SDTW \
-    --memprof \
-    --add_track 58 8
+    --memprof

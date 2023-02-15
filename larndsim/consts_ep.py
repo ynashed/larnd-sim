@@ -19,6 +19,8 @@ class manage_diff:
             nom = getattr(obj, f'{self.public_name}_nom')
             diff = getattr(obj, f'{self.public_name}_diff')
             return nom + diff
+        elif self.public_name == 'vdrift' and obj.link_vdrift_eField:
+            return obj.eField * obj.electron_mobility(obj.eField, obj.temperature)
         else:
             return getattr(obj, self.private_name)
         
@@ -39,11 +41,15 @@ class consts:
         ## Turn smoothing on/off to help gradients
         self.smooth = True
 
+        self.link_vdrift_eField = False
+
         ## Detector constants
         #: Liquid argon density in :math:`g/cm^3`
         self.lArDensity = 1.38 # g/cm^3
         #: Electric field magnitude in :math:`kV/cm`
         self.eField = 0.50 # kV/cm
+        #: LAr temperature
+        self.temperature = 87.17 # K
 
         ## Unit Conversions
         self.MeVToElectrons = 4.237e+04
@@ -59,6 +65,8 @@ class consts:
         self.kb = 0.0486 # g/cm2/MeV Amoruso, et al NIM A 523 (2004) 275
         #: Electron charge in Coulomb
         self.e_charge = 1.602e-19
+        #: Mobility model parameters
+        self.ELECTRON_MOBILITY_PARAMS = 551.6, 7158.3, 4440.43, 4.29, 43.63, 0.2053
 
         ## TPC params
         #: Drift velocity in :math:`cm/\mu s`
@@ -131,6 +139,31 @@ class consts:
         self.anode_layout = (2,4)
         self.xs = 0
         self.ys = 0
+
+    def electron_mobility(self, efield, temperature):
+        """
+        Calculation of the electron mobility w.r.t temperature and electric
+        field.
+        References:
+         - https://lar.bnl.gov/properties/trans.html (summary)
+         - https://doi.org/10.1016/j.nima.2016.01.073 (parameterization)
+         
+        Args:
+            efield (float): electric field in kV/cm
+            temperature (float): temperature
+            
+        Returns:
+            float: electron mobility in cm^2/kV/us
+        """
+        a0, a1, a2, a3, a4, a5 = self.ELECTRON_MOBILITY_PARAMS
+    
+        num = a0 + a1 * efield + a2 * pow(efield, 1.5) + a3 * pow(efield, 2.5)
+        denom = 1 + (a1 / a0) * efield + a4 * pow(efield, 2) + a5 * pow(efield, 3)
+        temp_corr = pow(temperature / 89, -1.5)
+    
+        mu = num / denom * temp_corr / 1000 #* V / kV
+    
+        return mu
 
     def load_detector_properties(self, detprop_file, pixel_file):
         """

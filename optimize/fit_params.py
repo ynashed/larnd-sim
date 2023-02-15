@@ -7,9 +7,8 @@ import numpy as np
 from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
 from larndsim.sim_with_grad import sim_with_grad
-from profiling.profiling import memprof, get_cpuprof_enable
+from profiling.profiling import memprof, global_line_profiler
 import torch
-from torch.profiler import profile, ProfilerActivity
 
 from tqdm import tqdm
 
@@ -38,9 +37,11 @@ def normalize_param(param_val, param_name, scheme="divide", undo_norm=False):
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
-                 lr=None, optimizer=None, loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
+                 lr=None, optimizer=None, lr_scheduler=None, lr_kw=None, 
+                 loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
-                 no_adc=False, shift_no_fit=[]):
+                 no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None, skip_pixels = False,
+                 config = {}):
 
         if optimizer_fn == "Adam":
             self.optimizer_fn = torch.optim.Adam
@@ -52,6 +53,9 @@ class ParamFitter:
 
         self.no_adc = no_adc
         self.shift_no_fit = shift_no_fit
+        self.link_vdrift_eField = link_vdrift_eField
+        self.batch_memory = batch_memory
+        self.skip_pixels = skip_pixels
 
         self.out_label = out_label
         self.norm_scheme = norm_scheme
@@ -82,11 +86,12 @@ class ParamFitter:
             is_continue = True
 
         # Simulation object for target
-        self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_target)
+        self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_target, skip_pixels=self.skip_pixels)
         self.sim_target.load_detector_properties(detector_props, pixel_layouts)
+        self.sim_target.link_vdrift_eField = link_vdrift_eField
 
         # Simulation object for iteration -- this is where gradient updates will happen
-        self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess)
+        self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
         self.sim_iter.load_detector_properties(detector_props, pixel_layouts)
 
         # Normalize parameters to init at 1, or set to checkpointed values
@@ -100,8 +105,9 @@ class ParamFitter:
         self.sim_iter.track_gradients(self.relevant_params_list, fit_diffs=self.fit_diffs)
 
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
-        self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess)
+        self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
         self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
+        self.sim_physics.link_vdrift_eField = link_vdrift_eField
 
         # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
         lr_dict = {}
@@ -129,6 +135,13 @@ class ParamFitter:
         else:
             self.optimizer = optimizer
 
+        if lr_scheduler is not None and lr_kw is not None:
+            lr_scheduler_fn = getattr(torch.optim.lr_scheduler, lr_scheduler)
+            self.lr_scheduler = lr_scheduler_fn(self.optimizer, **lr_kw)
+            print(f"Using learning rate scheduler {lr_scheduler}")
+        else:
+            self.lr_scheduler = None
+
         # Set up loss function -- can pass in directly, or choose a named one
         if loss_fn is None or loss_fn == "space_match":
             self.loss_fn = calc_loss
@@ -140,7 +153,8 @@ class ParamFitter:
             print("Using space match loss")
         elif loss_fn == "SDTW":
             self.loss_fn = calc_soft_dtw_loss
-            t_only = "vdrift" in self.relevant_params_list
+
+            t_only = self.no_adc
             adc_only = not t_only
 
             self.loss_fn_kw = {
@@ -175,7 +189,9 @@ class ParamFitter:
             self.training_history['losses_iter'] = []
             self.training_history['norm_scheme'] = self.norm_scheme
             self.training_history['fit_diffs'] = self.fit_diffs
-            self.training_history['optimizer_fn_name'] = self.optimizer_fn_name 
+            self.training_history['optimizer_fn_name'] = self.optimizer_fn_name
+
+        self.training_history['config'] = config
 
     def make_target_sim(self, seed=2, fixed_range=None):
         np.random.seed(seed)
@@ -192,7 +208,15 @@ class ParamFitter:
             setattr(self.sim_target, param, param_val)
 
 
-    @memprof()         
+    def optimize_batch_memory(self, sim, tracks) -> None:
+        if self.batch_memory is not None:
+            estimated_memory = sim.estimate_peak_memory(tracks, self.track_fields)
+            chunk_size = int(self.batch_memory // estimated_memory)
+            print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
+            sim.update_chunk_sizes(1, chunk_size)
+
+    
+    @memprof()
     def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
             save_freq=10, print_freq=1):
         # If explicit number of iterations, scale epochs accordingly
@@ -204,6 +228,9 @@ class ParamFitter:
             shutil.rmtree('target_' + self.out_label, ignore_errors=True)
         os.makedirs('target_' + self.out_label)
 
+        # make a folder for the fit result
+        if not os.path.exists('fit_result'):
+            os.makedirs('fit_result')
 
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
@@ -224,11 +251,23 @@ class ParamFitter:
         # The training loop
         total_iter = 0
         with tqdm(total=pbar_total) as pbar:
+            # to_break = False
             for epoch in range(epochs):
-
+                global_line_profiler.add_note({'event': 'new_epoch', 'epoch': epoch})
+                # if to_break:
+                #     break
                 # Losses for each batch -- used to compute epoch loss
                 losses_batch=[]
                 for i, selected_tracks_bt_torch in enumerate(dataloader):
+                    if i%10 == 0 and i != 0:
+                        global_line_profiler.checkpoint()
+                    # if i > 50:
+                    #     to_break = True
+                    #     break
+                    # if i != 48:
+                    #     continue
+                    global_line_profiler.add_note({'event': 'new_batch', 'batch': i})
+                    
                     # Zero gradients
                     self.optimizer.zero_grad()
 
@@ -239,8 +278,19 @@ class ParamFitter:
 
                     loss_ev = []
                     # Calculate loss per event
-                    for ev in unique_eventIDs:
+                    for ev in unique_eventIDs:     
                         selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
+                        global_line_profiler.add_note({'event': 'new_event', 'ev': ev,
+                                                       'shape': selected_tracks_torch.size(),
+                                                       'dxs': selected_tracks_torch[:, self.track_fields.index("dx")],
+                                                       'x_start': selected_tracks_torch[:, self.track_fields.index("x_start")],
+                                                       'y_start': selected_tracks_torch[:, self.track_fields.index("y_start")],
+                                                       'z_start': selected_tracks_torch[:, self.track_fields.index("z_start")],
+                                                       'x_end': selected_tracks_torch[:, self.track_fields.index("x_end")],
+                                                       'y_end': selected_tracks_torch[:, self.track_fields.index("y_end")],
+                                                       'z_end': selected_tracks_torch[:, self.track_fields.index("z_end")],
+                                                       'trackID': selected_tracks_torch[:, self.track_fields.index("trackID")]
+                                                       })
                         selected_tracks_torch = selected_tracks_torch.to(self.device)
 
                         if shuffle:
@@ -251,11 +301,16 @@ class ParamFitter:
                         else:
                             # Simulate target and store them
                             if epoch == 0:
-                                
-                                target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                                              event_id_map, unique_eventIDs,
-                                                                              return_unique_pix=True)
-                                embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+                                #No need to store gradients for forward-only pass
+                                with torch.no_grad():
+                                    global_line_profiler.add_note({'event': 'sim_ref'})
+                                    #Update chunk sizes based on memory calculations
+                                    self.optimize_batch_memory(self.sim_target, selected_tracks_torch)
+
+                                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                                                                event_id_map, unique_eventIDs,
+                                                                                return_unique_pix=True)
+                                    embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
 
                                 torch.save(embed_target, 'target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
 
@@ -267,34 +322,30 @@ class ParamFitter:
                             setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
                             print(param, getattr(self.sim_physics, param))
 
-                        # Set the profiler context-manager if needed
-                        if get_cpuprof_enable():
-                            context = profile(activities=[ProfilerActivity.CPU])
-                        else:
-                            context = memoryview(b'') #Workaround to get a no-op context (python>3.2)
-
                         # Simulate and get output
-                        with context as prof:
-                            output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
-                                                      event_id_map, unique_eventIDs,
-                                                      return_unique_pix=True)
+                        #Update chunk sizes based on memory calculations
+                        self.optimize_batch_memory(self.sim_physics, selected_tracks_torch)
+                        global_line_profiler.add_note({'event': 'sim'})
 
-                            # Embed both output and target into "full" image space
-                            embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
+                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
+                                                    event_id_map, unique_eventIDs,
+                                                    return_unique_pix=True)
 
-                            # Calc loss between simulated and target + backprop
-                            loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
+                        # Embed both output and target into "full" image space
+                        embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
 
-                            # To be investigated -- sometimes we get nans. Avoid doing a step if so
-                            if not loss.isnan():
-                                loss_ev.append(loss)
+                        # Calc loss between simulated and target + backprop
+                        global_line_profiler.add_note({'event': 'loss'})
+                        loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
 
-                        if get_cpuprof_enable():
-                            prof.events().export_chrome_trace("profiling.trace")
+                        # To be investigated -- sometimes we get nans. Avoid doing a step if so
+                        if not loss.isnan():
+                            loss_ev.append(loss)
 
                     # Backpropagate the parameter(s) per batch
                     if len(loss_ev) > 0:
                         loss_ev_mean = torch.mean(torch.stack(loss_ev))
+                        global_line_profiler.add_note({'event': 'backprop'})
                         loss_ev_mean.backward()
                         if self.fit_diffs:
                             nan_check = torch.tensor([getattr(self.sim_iter, param+"_diff").grad.isnan() for param in self.relevant_params_list]).sum()
@@ -320,17 +371,17 @@ class ParamFitter:
                                 self.training_history[param+"_iter"].append(normalize_param(getattr(self.sim_iter, param).item(), 
                                                                                             param, scheme=self.norm_scheme, undo_norm=True))
 
-                            if iterations is not None:
-                                if total_iter % print_freq == 0:
-                                    for param in self.relevant_params_list:
-                                        print(param, getattr(self.sim_physics,param).item())
-                                    
-                                if total_iter % save_freq == 0:
-                                    with open(f'history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
-                                        pickle.dump(self.training_history, f_history)
+                    if iterations is not None:
+                        if total_iter % print_freq == 0:
+                            for param in self.relevant_params_list:
+                                print(param, getattr(self.sim_physics,param).item())
+                            
+                        if total_iter % save_freq == 0:
+                            with open(f'fit_result/history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
+                                pickle.dump(self.training_history, f_history)
 
-                                    if os.path.exists(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl'):
-                                        os.remove(f'history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl') 
+                            if os.path.exists(f'fit_result/history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl'):
+                                os.remove(f'fit_result/history_{param}_iter{total_iter-save_freq}_{self.out_label}.pkl') 
 
                     total_iter += 1
                     pbar.update(1)
@@ -338,6 +389,9 @@ class ParamFitter:
                     if iterations is not None:
                         if total_iter >= iterations:
                             break
+
+                if self.lr_scheduler is not None:
+                    self.lr_scheduler.step()
 
                 # Print out params at each epoch
                 if epoch % print_freq == 0 and iterations is None:
@@ -353,11 +407,16 @@ class ParamFitter:
                 # Save history in pkl files
                 n_steps = len(self.training_history[param])
                 if n_steps % save_freq == 0 and iterations is None:
-                    with open(f'history_{param}_epoch{n_steps}_{self.out_label}.pkl', "wb") as f_history:
+                    with open(f'fit_result/history_{param}_epoch{n_steps}_{self.out_label}.pkl', "wb") as f_history:
                         pickle.dump(self.training_history, f_history)
-                    if os.path.exists(f'history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
-                        os.remove(f'history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl') 
+                    if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
+                        os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl') 
 
+        if iterations is None:
+            with open(f'fit_result/history_{param}_{self.out_label}.pkl', "wb") as f_history:
+                pickle.dump(self.training_history, f_history)
+                if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
+                    os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl')
 
     def loss_scan_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
 
