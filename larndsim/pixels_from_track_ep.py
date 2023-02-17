@@ -52,11 +52,10 @@ class pixels_from_track(consts):
         longest_pix = ceil(ep.max(tracks_ep[:, fields.index("dx")]).item() / self.pixel_pitch)
         max_radius = ceil(ep.max(tracks_ep[:, fields.index("tran_diff")]).item() * 5 / self.pixel_pitch)
 
-        max_pixels = int((longest_pix * 4 + 6) * max_radius * 1.5)
         max_active_pixels = int(longest_pix * 1.5)
         active_pixels = self.get_active_pixels(start_pixel, end_pixel, max_active_pixels)
 
-        neighboring_pixels, n_pixels_list = self.get_neighboring_pixels(active_pixels, max_radius + 1, max_pixels)
+        neighboring_pixels, n_pixels_list = self.get_neighboring_pixels(active_pixels, max_radius + 1)
         return active_pixels.raw, neighboring_pixels.raw, n_pixels_list
 
 
@@ -95,7 +94,7 @@ class pixels_from_track(consts):
         return tot_pixels
 
 
-    def get_neighboring_pixels(self, active_pixels, radius, max_pixels):
+    def get_neighboring_pixels(self, active_pixels, radius):
         """
          For each active_pixel, it includes all
          neighboring pixels within a specified radius
@@ -106,7 +105,6 @@ class pixels_from_track(consts):
                  the segments
             radius (int): number of layers of neighboring pixels we
                  want to consider
-            max_pixels (int): maximum length of returned array
          Returns:
             neighboring_pixels (:obj:`numpy.ndarray`, `pyTorch/Tensorflow/JAX Tensor`) array where we store the IDs of the
             pixels directly below the projection of the segments and the ones next to them
@@ -119,6 +117,7 @@ class pixels_from_track(consts):
 
         neighboring_pixels = []
         n_pixels_list = []
+        max_pixels = 0
         for ti, track in enumerate(active_pixels):
             track = track[track >= 0].reshape([-1, 2])
             n_indices = ep.tile(neighbor_indices, [track.shape[0], 1]) + \
@@ -129,8 +128,11 @@ class pixels_from_track(consts):
             n_indices = ep.stack([n_indices // self.n_pixels[1],
                                   n_indices % self.n_pixels[1]], axis=1)
             n_pixels_list.append(int(n_indices.shape[0]))
-            neighboring_pixels.append(ep.pad(n_indices, ((0, max_pixels - n_indices.shape[0]), (0, 0)),
-                                             mode='constant', value=-1))
+            neighboring_pixels.append(n_indices)
+
+        max_pixels = np.max(n_pixels_list)
+        neighboring_pixels = [ep.pad(n_indices, ((0, max_pixels - n_indices.shape[0]), (0, 0)),
+                                             mode='constant', value=-1) for n_indices in neighboring_pixels]
         
 
         neighboring_pixels = ep.stack(neighboring_pixels)
