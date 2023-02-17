@@ -7,7 +7,7 @@ import torch
 import numpy as np
 from math import pi, ceil, sqrt, erf, exp, log, floor
 from torch.utils import checkpoint
-from profiling.profiling import memprof, global_line_profiler
+# from profiling.profiling import memprof, global_line_profiler
 import time
 
 from .consts_ep import consts
@@ -246,13 +246,13 @@ class detsim(consts):
         D_params = (2.644, -9.174, -9.174, 13.483, 45.887, 45.887)
         t0_params = (2.948, -2.705, -2.705, 4.825, 20.814, 20.814)
 
-        global_line_profiler.add_note({
-                'event': 'record_dims',
-                't': t.raw.size(),
-                't0': t0.raw.size(),
-                'x': x.raw.size(),
-                'y': y.raw.size(),
-            })
+        # global_line_profiler.add_note({
+        #         'event': 'record_dims',
+        #         't': t.raw.size(),
+        #         't0': t0.raw.size(),
+        #         'x': x.raw.size(),
+        #         'y': y.raw.size(),
+        #     })
 
         a = B_params[0] + B_params[1] * x + B_params[2] * y + B_params[3] * x * y + B_params[4] * x * x + B_params[
             5] * y * y
@@ -380,7 +380,7 @@ class detsim(consts):
         return total_current.sum(axis=(3, 4, 5)).raw
 
 
-    @memprof()
+    # @memprof()
     def tracks_current(self, pixels, npixels, tracks, time_max, fields):
         """
         This function calculates the charge induced on the pixels by the input tracks.
@@ -431,16 +431,16 @@ class detsim(consts):
                                    ep.full_like(sigmas[:, 0], sqrt(self.pixel_pitch ** 2 + self.pixel_pitch ** 2) / 2)) * 2
         z_poca, z_start, z_end = self.z_interval(start, end, x_p, y_p, impact_factor)
 
-        global_line_profiler.add_note({
-                'event': 'z_interval',
-                'start': start.raw,
-                'end': end.raw,
-                'x_p': x_p.raw,
-                'impact_factor': impact_factor.raw,
-                'z_poca': z_poca.raw,
-                'z_start': z_start.raw,
-                'z_end': z_end.raw
-            })
+        # global_line_profiler.add_note({
+        #         'event': 'z_interval',
+        #         'start': start.raw,
+        #         'end': end.raw,
+        #         'x_p': x_p.raw,
+        #         'impact_factor': impact_factor.raw,
+        #         'z_poca': z_poca.raw,
+        #         'z_start': z_start.raw,
+        #         'z_end': z_end.raw
+        #     })
 
         z_start_int = z_start - 4 * sigmas[:, 2][...,ep.newaxis]
         z_end_int = z_end + 4 * sigmas[:, 2][...,ep.newaxis]
@@ -471,7 +471,7 @@ class detsim(consts):
                 ip_end = min(ip + self.pixel_chunk, pix_end_range)
                 if tracks_ep.raw.grad_fn is not None:
                     # Torch checkpointing needs torch tensors for both input and output
-                    global_line_profiler.add_note({'event': 'checkpoint', 'it': it, 'ip': ip})
+                    # global_line_profiler.add_note({'event': 'checkpoint', 'it': it, 'ip': ip})
                     current_sum = checkpoint.checkpoint(self.calc_total_current, 
                                                      *(x_start[it:it_end, ip:ip_end].raw, y_start[it:it_end, ip:ip_end].raw, z_start.raw, 
                                                        z_end.raw, z_start_int[it:it_end, ip:ip_end].raw, z_end_int[it:it_end, ip:ip_end].raw, z_poca[it:it_end, ip:ip_end].raw, 
@@ -491,7 +491,7 @@ class detsim(consts):
         return signals.raw
 
 
-    @memprof()
+    # @memprof()
     def sum_pixel_signals(self, pixels_signals, signals, track_starts, index_map):
         """
         This function sums the induced current signals on the same pixel.

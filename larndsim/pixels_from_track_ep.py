@@ -9,7 +9,6 @@ import numpy as np
 from math import ceil
 
 from .consts_ep import consts
-from profiling.profiling import memprof
 
 import logging
 

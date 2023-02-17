@@ -8,7 +8,6 @@ import eagerpy as ep
 from .consts_ep import consts
 
 import logging
-from profiling.profiling import memprof
 
 logging.basicConfig()
 logger = logging.getLogger('quenching')

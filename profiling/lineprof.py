@@ -167,9 +167,12 @@ class LineProf:
                 with open(ofilename, 'a') as f:
                     f.write(ostring)
 
-    def checkpoint(self):
+    def checkpoint(self, basename = None):
         if self.checkpoint_name is None:
-            self.checkpoint_name = time.strftime('%Y%m%d-%H%M%S')
+            if basename is None:
+                self.checkpoint_name = time.strftime('%Y%m%d-%H%M%S')
+            else:
+                self.checkpoint_name = basename
 
         filename = f"{self.checkpoint_name}_{self.checkpoint_id}.pkl"
         self.export(filename)

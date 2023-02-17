@@ -260,7 +260,7 @@ class ParamFitter:
                 losses_batch=[]
                 for i, selected_tracks_bt_torch in enumerate(dataloader):
                     if i%10 == 0 and i != 0:
-                        global_line_profiler.checkpoint()
+                        global_line_profiler.checkpoint(f"memprof_{self.out_label}")
                     # if i > 50:
                     #     to_break = True
                     #     break

@@ -39,7 +39,7 @@ def get_id_map(selected_tracks, fields, device):
     return event_id_map_torch, unique_eventIDs
 
 
-@memprof()
+# @memprof()
 def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_unique_pix=False):
     selected_tracks_quench = sim.quench(selected_tracks, sim.birks, fields=fields)
     selected_tracks_drift = sim.drift(selected_tracks_quench, fields=fields)
@@ -53,7 +53,7 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
                                                               fields=fields)
 
     torch.cuda.empty_cache()
-    global_line_profiler.add_note({'event': 'track_current', 'time_max': max_length_torch.item(), 'pixels_dim': neighboring_pixels_torch.size()})
+    # global_line_profiler.add_note({'event': 'track_current', 'time_max': max_length_torch.item(), 'pixels_dim': neighboring_pixels_torch.size()})
     
     signals_ep = sim.tracks_current(neighboring_pixels_torch, n_pixels_list_ep, selected_tracks_drift, 
                                           max_length_torch,
