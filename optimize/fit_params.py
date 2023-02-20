@@ -39,7 +39,7 @@ class ParamFitter:
                  lr=None, optimizer=None, lr_scheduler=None, lr_kw=None, 
                  loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
-                 no_adc=False, shift_no_fit=[], link_vdrift_eField=False):
+                 no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None):
 
         if optimizer_fn == "Adam":
             self.optimizer_fn = torch.optim.Adam
@@ -52,6 +52,7 @@ class ParamFitter:
         self.no_adc = no_adc
         self.shift_no_fit = shift_no_fit
         self.link_vdrift_eField = link_vdrift_eField
+        self.batch_memory = batch_memory
 
         self.out_label = out_label
         self.norm_scheme = norm_scheme
@@ -201,7 +202,15 @@ class ParamFitter:
             print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
             setattr(self.sim_target, param, param_val)
 
-            
+
+    def optimize_batch_memory(self, sim, tracks) -> None:
+        if self.batch_memory is not None:
+            estimated_memory = sim.estimate_peak_memory(tracks, self.track_fields)
+            chunk_size = int(self.batch_memory // estimated_memory)
+            print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
+            sim.update_chunk_sizes(1, chunk_size)
+
+    
     def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
             save_freq=10, print_freq=1):
         # If explicit number of iterations, scale epochs accordingly
@@ -237,7 +246,6 @@ class ParamFitter:
         total_iter = 0
         with tqdm(total=pbar_total) as pbar:
             for epoch in range(epochs):
-
                 # Losses for each batch -- used to compute epoch loss
                 losses_batch=[]
                 for i, selected_tracks_bt_torch in enumerate(dataloader):
@@ -263,11 +271,15 @@ class ParamFitter:
                         else:
                             # Simulate target and store them
                             if epoch == 0:
-                                
-                                target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                                              event_id_map, unique_eventIDs,
-                                                                              return_unique_pix=True)
-                                embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+                                #No need to store gradients for forward-only pass
+                                with torch.no_grad():
+                                    #Update chunk sizes based on memory calculations
+                                    self.optimize_batch_memory(self.sim_target, selected_tracks_torch)
+
+                                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                                                                event_id_map, unique_eventIDs,
+                                                                                return_unique_pix=True)
+                                    embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
 
                                 torch.save(embed_target, 'target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
 
@@ -280,6 +292,8 @@ class ParamFitter:
                             print(param, getattr(self.sim_physics, param))
 
                         # Simulate and get output
+                        #Update chunk sizes based on memory calculations
+                        self.optimize_batch_memory(self.sim_physics, selected_tracks_torch)
                         output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
                                                   event_id_map, unique_eventIDs,
                                                   return_unique_pix=True)

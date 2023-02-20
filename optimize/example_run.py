@@ -152,6 +152,8 @@ if __name__ == '__main__':
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
     parser.add_argument("--link-vdrift-eField", dest="link_vdrift_eField", default=False, action="store_true",
                         help="Link vdrift and eField in fitting")
+    parser.add_argument("--batch_memory", dest="batch_memory", type=int, default=None,
+                        help="Optimize the pixel chunk size to reach the specified GPU memory per batch, in MiB")
 
     try:
         args = parser.parse_args()

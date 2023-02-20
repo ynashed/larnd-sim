@@ -349,7 +349,7 @@ class detsim(consts):
         
         return total_current.sum(axis=(3, 4, 5)).raw
 
-    def tracks_current(self, pixels, tracks, time_max, fields):
+    def tracks_current(self, pixels, npixels, tracks, time_max, fields):
         """
         This function calculates the charge induced on the pixels by the input tracks.
 
@@ -420,7 +420,7 @@ class detsim(consts):
         signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max.astype(int).item()))
         for it in range(0, z_start.shape[0], self.track_chunk):
             it_end = min(it + self.track_chunk, z_start.shape[0])
-            for ip in range(0, z_start.shape[1], self.pixel_chunk):
+            for ip in range(0, min(npixels[it], z_start.shape[1]), self.pixel_chunk):
                 ip_end = min(ip + self.pixel_chunk, z_start.shape[1])
                 if tracks_ep.raw.grad_fn is not None:
                     # Torch checkpointing needs torch tensors for both input and output
