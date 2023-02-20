@@ -20,9 +20,10 @@ logger.setLevel(logging.WARNING)
 logger.info("DETSIM MODULE PARAMETERS")
 
 class detsim(consts):
-    def __init__(self, track_chunk, pixel_chunk):
+    def __init__(self, track_chunk, pixel_chunk, skip_pixels=False):
         self.track_chunk = track_chunk
         self.pixel_chunk = pixel_chunk
+        self.skip_pixels = skip_pixels
         consts.__init__(self)
 
 
@@ -420,7 +421,11 @@ class detsim(consts):
         signals = ep.zeros(z_start, shape=(pixels.shape[0], pixels.shape[1], time_max.astype(int).item()))
         for it in range(0, z_start.shape[0], self.track_chunk):
             it_end = min(it + self.track_chunk, z_start.shape[0])
-            for ip in range(0, min(npixels[it], z_start.shape[1]), self.pixel_chunk):
+            if self.skip_pixels: # ASSUMES THAT TRACK_CHUNK = 0
+                pix_end_range = z_start.shape[1]
+            else:
+                pix_end_range = min(npixels[it], z_start.shape[1])
+            for ip in range(0, pix_end_range, self.pixel_chunk):
                 ip_end = min(ip + self.pixel_chunk, z_start.shape[1])
                 if tracks_ep.raw.grad_fn is not None:
                     # Torch checkpointing needs torch tensors for both input and output

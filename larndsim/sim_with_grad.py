@@ -8,11 +8,11 @@ from math import sqrt
 
 #Wrapper derived class inheriting all simulation steps
 class sim_with_grad(quench, drift, pixels_from_track, detsim, fee):
-    def __init__(self, track_chunk=32, pixel_chunk=4, readout_noise=True):
+    def __init__(self, track_chunk=32, pixel_chunk=4, readout_noise=True, skip_pixels=False):
         quench.__init__(self)
         drift.__init__(self)
         pixels_from_track.__init__(self)
-        detsim.__init__(self, track_chunk, pixel_chunk)
+        detsim.__init__(self, track_chunk, pixel_chunk, skip_pixels)
         fee.__init__(self, readout_noise)
 
     def update_chunk_sizes(self, track_chunk, pixel_chunk):

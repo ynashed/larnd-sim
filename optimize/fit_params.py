@@ -39,7 +39,8 @@ class ParamFitter:
                  lr=None, optimizer=None, lr_scheduler=None, lr_kw=None, 
                  loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
-                 no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None):
+                 no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None, skip_pixels = False,
+                 config = {}):
 
         if optimizer_fn == "Adam":
             self.optimizer_fn = torch.optim.Adam
@@ -53,6 +54,7 @@ class ParamFitter:
         self.shift_no_fit = shift_no_fit
         self.link_vdrift_eField = link_vdrift_eField
         self.batch_memory = batch_memory
+        self.skip_pixels = skip_pixels
 
         self.out_label = out_label
         self.norm_scheme = norm_scheme
@@ -83,12 +85,12 @@ class ParamFitter:
             is_continue = True
 
         # Simulation object for target
-        self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_target)
+        self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_target, skip_pixels=self.skip_pixels)
         self.sim_target.load_detector_properties(detector_props, pixel_layouts)
         self.sim_target.link_vdrift_eField = link_vdrift_eField
 
         # Simulation object for iteration -- this is where gradient updates will happen
-        self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess)
+        self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
         self.sim_iter.load_detector_properties(detector_props, pixel_layouts)
 
         # Normalize parameters to init at 1, or set to checkpointed values
@@ -102,7 +104,7 @@ class ParamFitter:
         self.sim_iter.track_gradients(self.relevant_params_list, fit_diffs=self.fit_diffs)
 
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
-        self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess)
+        self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
         self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
         self.sim_physics.link_vdrift_eField = link_vdrift_eField
 
@@ -186,7 +188,9 @@ class ParamFitter:
             self.training_history['losses_iter'] = []
             self.training_history['norm_scheme'] = self.norm_scheme
             self.training_history['fit_diffs'] = self.fit_diffs
-            self.training_history['optimizer_fn_name'] = self.optimizer_fn_name 
+            self.training_history['optimizer_fn_name'] = self.optimizer_fn_name
+
+        self.training_history['config'] = config
 
     def make_target_sim(self, seed=2, fixed_range=None):
         np.random.seed(seed)
