@@ -211,6 +211,7 @@ class ParamFitter:
         if self.batch_memory is not None:
             estimated_memory = sim.estimate_peak_memory(tracks, self.track_fields)
             chunk_size = int(self.batch_memory // estimated_memory)
+            chunk_size = max(1, chunk_size) #Min value should be 1
             print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
             sim.update_chunk_sizes(1, chunk_size)
 
