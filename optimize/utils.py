@@ -49,7 +49,7 @@ def all_sim(sim, selected_tracks, fields, event_id_map, unique_eventIDs, return_
                                                               selected_tracks_drift, 
                                                               fields=fields)
     
-    signals_ep = sim.tracks_current(neighboring_pixels_torch, selected_tracks_drift, 
+    signals_ep = sim.tracks_current(neighboring_pixels_torch, n_pixels_list_ep, selected_tracks_drift, 
                                           max_length_torch,
                                           fields=fields)
 
