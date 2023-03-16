@@ -40,6 +40,7 @@ class ParamFitter:
                  loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
                  no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None, skip_pixels = False,
+                 set_target_vals=[],
                  config = {}):
 
         if optimizer_fn == "Adam":
@@ -83,6 +84,19 @@ class ParamFitter:
         if load_checkpoint is not None:
             history = pickle.load(open(load_checkpoint, "rb"))
             is_continue = True
+
+        self.target_val_dict = None
+        if len(set_target_vals) > 0:
+            if len(set_target_vals) % 2 != 0:
+                raise ValueError("Incorrect format for set_target_vals!")
+            
+            self.target_val_dict = {}
+            for i_val in range(len(set_target_vals)//2):
+                param_name = set_target_vals[2*i_val]
+                param_val = set_target_vals[2*i_val+1]
+                self.target_val_dict[param_name] = float(param_val)
+
+
 
         # Simulation object for target
         self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_target, skip_pixels=self.skip_pixels)
@@ -195,16 +209,29 @@ class ParamFitter:
     def make_target_sim(self, seed=2, fixed_range=None):
         np.random.seed(seed)
         print("Constructing target param simulation")
-        for param in self.relevant_params_list + self.shift_no_fit:
-            if fixed_range is not None:
-                param_val = np.random.uniform(low=ranges[param]['nom']*(1.-fixed_range), 
-                                              high=ranges[param]['nom']*(1.+fixed_range))
-            else:
-                param_val = np.random.uniform(low=ranges[param]['down'], 
-                                              high=ranges[param]['up'])
 
-            print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
-            setattr(self.sim_target, param, param_val)
+        if self.target_val_dict is not None:
+            if set(self.relevant_params_list + self.shift_no_fit) != set(self.target_val_dict.keys()):
+                print(set(self.relevant_params_list + self.shift_no_fit))
+                print(set(self.target_val_dict.keys()))
+                raise ValueError("Must specify all parameters if explicitly setting target")
+
+            print("Explicitly setting targets:")
+            for param in self.target_val_dict.keys():
+                param_val = self.target_val_dict[param]
+                print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
+                setattr(self.sim_target, param, param_val)
+        else:
+            for param in self.relevant_params_list + self.shift_no_fit:
+                if fixed_range is not None:
+                    param_val = np.random.uniform(low=ranges[param]['nom']*(1.-fixed_range), 
+                                                high=ranges[param]['nom']*(1.+fixed_range))
+                else:
+                    param_val = np.random.uniform(low=ranges[param]['down'], 
+                                                high=ranges[param]['up'])
+
+                print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
+                setattr(self.sim_target, param, param_val)
 
 
     def optimize_batch_memory(self, sim, tracks) -> None:
