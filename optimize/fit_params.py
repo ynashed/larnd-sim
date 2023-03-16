@@ -40,7 +40,7 @@ class ParamFitter:
                  loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
                  no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None, skip_pixels = False,
-                 set_target_vals=[],
+                 set_target_vals=[], vary_init=False, seed_init=30,
                  config = {}):
 
         if optimizer_fn == "Adam":
@@ -107,20 +107,31 @@ class ParamFitter:
         self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
         self.sim_iter.load_detector_properties(detector_props, pixel_layouts)
 
-        # Normalize parameters to init at 1, or set to checkpointed values
+        # Normalize parameters to init at 1, or random, or set to checkpointed values
+        np.random.seed(seed_init)
         for param in self.relevant_params_list:
             if is_continue:
                 setattr(self.sim_iter, param, normalize_param(history[param][-1], param, scheme=self.norm_scheme))
             else:
-                setattr(self.sim_iter, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme))
-
-        # Keep track of gradients in sim_iter
-        self.sim_iter.track_gradients(self.relevant_params_list, fit_diffs=self.fit_diffs)
+                if vary_init:
+                    print("Running with random initial guess")
+                    init_val = np.random.uniform(low=ranges[param]['down'], 
+                                                  high=ranges[param]['up'])
+                    setattr(self.sim_iter, param, normalize_param(init_val, param, scheme=self.norm_scheme))
+                else:
+                    setattr(self.sim_iter, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme))
 
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
         self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
         self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
         self.sim_physics.link_vdrift_eField = link_vdrift_eField
+
+        for param in self.relevant_params_list:
+            setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
+
+        # Keep track of gradients in sim_iter
+        self.sim_iter.track_gradients(self.relevant_params_list, fit_diffs=self.fit_diffs)
+
 
         # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
         lr_dict = {}
@@ -219,7 +230,7 @@ class ParamFitter:
             print("Explicitly setting targets:")
             for param in self.target_val_dict.keys():
                 param_val = self.target_val_dict[param]
-                print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
+                print(f'{param}, target: {param_val}, init {getattr(self.sim_physics, param)}')    
                 setattr(self.sim_target, param, param_val)
         else:
             for param in self.relevant_params_list + self.shift_no_fit:
@@ -230,7 +241,7 @@ class ParamFitter:
                     param_val = np.random.uniform(low=ranges[param]['down'], 
                                                 high=ranges[param]['up'])
 
-                print(f'{param}, target: {param_val}, init {getattr(self.sim_target, param)}')    
+                print(f'{param}, target: {param_val}, init {getattr(self.sim_physics, param)}')    
                 setattr(self.sim_target, param, param_val)
 
 
