@@ -62,6 +62,7 @@ def main(config):
                             lr_scheduler=config.lr_scheduler, lr_kw=config.lr_kw,
                             no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit,
                             link_vdrift_eField=config.link_vdrift_eField, batch_memory=config.batch_memory, skip_pixels=config.skip_pixels,
+                            set_target_vals=config.set_target_vals, vary_init=config.vary_init, seed_init=config.seed_init,
                             config = config)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
     param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
@@ -99,6 +100,10 @@ if __name__ == '__main__':
                         help="Random seed for target construction")
     parser.add_argument("--data_seed", dest="data_seed", default=3, type=int,
                         help="Random seed for data picking if not using the whole set")
+    parser.add_argument("--seed-init", dest="seed_init", default=30, type=int,
+                        help="Random seed for initial condition. Only used if --vary-init is passed.")
+    parser.add_argument("--vary-init", dest="vary_init", default=False, action="store_true",
+                        help="Randomly sample initial guess (vs starting at nominal value)")
     parser.add_argument("--data_sz", dest="data_sz", default=None, type=int,
                         help="Data size for fitting (number of tracks); input negative values to run on the whole dataset")
     parser.add_argument("--no-noise", dest="no_noise", default=False, action="store_true",
@@ -151,6 +156,8 @@ if __name__ == '__main__':
                         help="print the event and track id per batch.")
     parser.add_argument("--shift-no-fit", dest="shift_no_fit", default=[], nargs="+", 
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
+    parser.add_argument("--set-target-vals", dest="set_target_vals", default=[], nargs="+", 
+                        help="Explicitly set values of target. Syntax is <param1> <val1> <param2> <val2>...")
     parser.add_argument("--link-vdrift-eField", dest="link_vdrift_eField", default=False, action="store_true",
                         help="Link vdrift and eField in fitting")
     parser.add_argument("--batch_memory", dest="batch_memory", type=int, default=None,
