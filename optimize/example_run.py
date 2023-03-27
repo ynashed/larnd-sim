@@ -6,6 +6,7 @@ import sys, os
 import traceback
 from torch.utils.data import DataLoader
 import json
+import pickle
 import numpy as np
 
 from .fit_params import ParamFitter
@@ -24,6 +25,22 @@ def make_param_list(config):
 
 
 def main(config):
+
+    if config.load_checkpoint is not None:
+        checkpoint_file = config.load_checkpoint
+        with open(checkpoint_file, 'rb') as f:
+            checkpoint = pickle.load(f)
+        if 'config' in checkpoint:
+            config = checkpoint['config']
+            config.load_checkpoint = checkpoint_file
+
+            print("Loaded checkpoint {checkpoint_file}. Continuing fit with parameters: {config}")
+
+            prev_iter = len(checkpoint['{config.param_list[0]}_iter'])
+            config.iterations = config.iterations - prev_iter
+            
+            print("{prev_iter} iterations already computed, {config.iterations} left")
+            
 
     if config.print_input:
         print("fit label: ", config.out_label)
@@ -71,7 +88,7 @@ def main(config):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--params", dest="param_list", default=[], nargs="+", required=True,
+    parser.add_argument("--params", dest="param_list", default=['Ab', 'kb', 'lifetime', 'eField', 'tran_diff', 'long_diff'], nargs="+",
                         help="List of parameters to optimize. See consts_ep.py")
     parser.add_argument("--input_file", dest="input_file",
                         default="/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5",
