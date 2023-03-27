@@ -31,15 +31,15 @@ def main(config):
         with open(checkpoint_file, 'rb') as f:
             checkpoint = pickle.load(f)
         if 'config' in checkpoint:
-            config = checkpoint['config']
+            vars(config).update(checkpoint['config']) #Update instead of replace because of possible new options
             config.load_checkpoint = checkpoint_file
 
-            print("Loaded checkpoint {checkpoint_file}. Continuing fit with parameters: {config}")
+            print(f"Loaded checkpoint {checkpoint_file}. Continuing fit with parameters: {config}")
 
-            prev_iter = len(checkpoint['{config.param_list[0]}_iter'])
+            prev_iter = len(checkpoint[f'{config.param_list[0]}_iter'])
             config.iterations = config.iterations - prev_iter
             
-            print("{prev_iter} iterations already computed, {config.iterations} left")
+            print(f"{prev_iter} iterations already computed, {config.iterations} left")
             
 
     if config.print_input:
