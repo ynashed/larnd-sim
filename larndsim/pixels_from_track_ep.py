@@ -13,7 +13,7 @@ from .consts_ep import consts
 import logging
 
 logging.basicConfig()
-logger = logging.getLogger('pixels_from_track')
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 logger.info("PIXEL_FROM_TRACK MODULE PARAMETERS")
 
