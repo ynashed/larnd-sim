@@ -7,9 +7,13 @@ import numpy as np
 from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
 from larndsim.sim_with_grad import sim_with_grad
+import logging
 import torch
 
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 def normalize_param(param_val, param_name, scheme="divide", undo_norm=False):
     if scheme == "divide":
@@ -60,8 +64,9 @@ class ParamFitter:
         self.out_label = out_label
         self.norm_scheme = norm_scheme
         self.max_clip_norm_val = max_clip_norm_val
+        self.load_checkpoint = load_checkpoint
         if self.max_clip_norm_val is not None:
-            print(f"Will clip gradient norm at {self.max_clip_norm_val}")
+            logger.info(f"Will clip gradient norm at {self.max_clip_norm_val}")
 
         self.fit_diffs = fit_diffs
         # If you have access to a GPU, sim works trivially/is much faster
@@ -114,7 +119,7 @@ class ParamFitter:
                 setattr(self.sim_iter, param, normalize_param(history[param][-1], param, scheme=self.norm_scheme))
             else:
                 if vary_init:
-                    print("Running with random initial guess")
+                    logger.info("Running with random initial guess")
                     init_val = np.random.uniform(low=ranges[param]['down'], 
                                                   high=ranges[param]['up'])
                     setattr(self.sim_iter, param, normalize_param(init_val, param, scheme=self.norm_scheme))
@@ -161,8 +166,12 @@ class ParamFitter:
 
         if lr_scheduler is not None and lr_kw is not None:
             lr_scheduler_fn = getattr(torch.optim.lr_scheduler, lr_scheduler)
+            last_epoch = lr_kw.pop('last_epoch', None)
             self.lr_scheduler = lr_scheduler_fn(self.optimizer, **lr_kw)
-            print(f"Using learning rate scheduler {lr_scheduler}")
+            if last_epoch is not None:
+                self.lr_scheduler.last_epoch = last_epoch
+                self.lr_scheduler.step()
+            logger.info(f"Using learning rate scheduler {lr_scheduler}")
         else:
             self.lr_scheduler = None
 
@@ -174,7 +183,7 @@ class ParamFitter:
                                 'return_components' : False,
                                 'no_adc' : self.no_adc 
                               }
-            print("Using space match loss")
+            logger.info("Using space match loss")
         elif loss_fn == "SDTW":
             self.loss_fn = calc_soft_dtw_loss
 
@@ -187,13 +196,13 @@ class ParamFitter:
                                 'gamma' : 1
                               }
             if t_only:
-                print("Using Soft DTW loss on t only")
+                logger.info("Using Soft DTW loss on t only")
             else:
-                print("Using Soft DTW loss on ADC only")
+                logger.info("Using Soft DTW loss on ADC only")
         else:
             self.loss_fn = loss_fn
             self.loss_fn_kw = {}
-            print("Using custom loss function")
+            logger.info("Using custom loss function")
 
         if is_continue:
             self.training_history = history
@@ -219,18 +228,18 @@ class ParamFitter:
 
     def make_target_sim(self, seed=2, fixed_range=None):
         np.random.seed(seed)
-        print("Constructing target param simulation")
+        logger.info("Constructing target param simulation")
 
         if self.target_val_dict is not None:
             if set(self.relevant_params_list + self.shift_no_fit) != set(self.target_val_dict.keys()):
-                print(set(self.relevant_params_list + self.shift_no_fit))
-                print(set(self.target_val_dict.keys()))
+                logger.debug(set(self.relevant_params_list + self.shift_no_fit))
+                logger.debug(set(self.target_val_dict.keys()))
                 raise ValueError("Must specify all parameters if explicitly setting target")
 
-            print("Explicitly setting targets:")
+            logger.info("Explicitly setting targets:")
             for param in self.target_val_dict.keys():
                 param_val = self.target_val_dict[param]
-                print(f'{param}, target: {param_val}, init {getattr(self.sim_physics, param)}')    
+                logger.info(f'{param}, target: {param_val}, init {getattr(self.sim_physics, param)}')    
                 setattr(self.sim_target, param, param_val)
         else:
             for param in self.relevant_params_list + self.shift_no_fit:
@@ -241,7 +250,7 @@ class ParamFitter:
                     param_val = np.random.uniform(low=ranges[param]['down'], 
                                                 high=ranges[param]['up'])
 
-                print(f'{param}, target: {param_val}, init {getattr(self.sim_physics, param)}')    
+                logger.info(f'{param}, target: {param_val}, init {getattr(self.sim_physics, param)}')    
                 setattr(self.sim_target, param, param_val)
 
 
@@ -250,7 +259,7 @@ class ParamFitter:
             estimated_memory = sim.estimate_peak_memory(tracks, self.track_fields)
             chunk_size = int(self.batch_memory // estimated_memory)
             chunk_size = max(1, chunk_size) #Min value should be 1
-            print(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
+            logger.info(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
             sim.update_chunk_sizes(1, chunk_size)
 
     
@@ -332,7 +341,7 @@ class ParamFitter:
                         # Undo normalization (sim -> sim_physics)
                         for param in self.relevant_params_list:
                             setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
-                            print(param, getattr(self.sim_physics, param))
+                            logger.debug(f"{param} {getattr(self.sim_physics, param)}")
 
                         # Simulate and get output
                         #Update chunk sizes based on memory calculations
@@ -379,10 +388,13 @@ class ParamFitter:
                                 self.training_history[param+"_iter"].append(normalize_param(getattr(self.sim_iter, param).item(), 
                                                                                             param, scheme=self.norm_scheme, undo_norm=True))
 
+                        else:
+                            logger.warning(f"Got {nan_check} gradients with a NaN value!")
+
                     if iterations is not None:
                         if total_iter % print_freq == 0:
                             for param in self.relevant_params_list:
-                                print(param, getattr(self.sim_physics,param).item())
+                                logger.info(f"{param} {getattr(self.sim_physics,param).item()}")
                             
                         if total_iter % save_freq == 0:
                             with open(f'fit_result/history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
@@ -404,7 +416,7 @@ class ParamFitter:
                 # Print out params at each epoch
                 if epoch % print_freq == 0 and iterations is None:
                     for param in self.relevant_params_list:
-                        print(param, getattr(self.sim_physics,param).item())
+                        logger.info(f"{param} {getattr(self.sim_physics,param).item()}")
 
                 # Keep track of training history
                 for param in self.relevant_params_list:
@@ -460,7 +472,7 @@ class ParamFitter:
 
                 # set up target per batch
                 for ev in unique_eventIDs:
-                    print("batch: " + str(i) + '; ev:' + str(int(ev)))
+                    logger.info("batch: " + str(i) + '; ev:' + str(int(ev)))
                     selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
                     selected_tracks_torch = selected_tracks_torch.to(self.device)
 
@@ -495,7 +507,7 @@ class ParamFitter:
                         for param in self.relevant_params_list:
                             setattr(self.sim_physics, param, getattr(self.sim_iter, param)*ranges[param]['nom'])
                             if run_no % print_freq == 0:
-                                print(param, getattr(self.sim_physics, param))
+                                logger.info(f"{param}, {getattr(self.sim_physics, param)}")
 
                         # Simulate and get output
                         output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
@@ -511,6 +523,8 @@ class ParamFitter:
                         # To be investigated -- sometimes we get nans. Avoid doing a step if so
                         if not loss.isnan():
                             loss_ev_per_val.append(loss)
+                        else:
+                            logger.warning("Got NaN as loss!")
 
                     # Average out the loss in different events per batch
                     if len(loss_ev_per_val) > 0:

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 import argparse
 import yaml
 import sys, os
@@ -9,15 +12,19 @@ import json
 import pickle
 import numpy as np
 
+
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 def make_param_list(config):
     if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
         with open(config.param_list[0], 'r') as config_file:
             config_dict = yaml.load(config_file, Loader=yaml.FullLoader)
         for key in config_dict.keys():
-            print(f"Setting lr {config_dict[key]} for {key}")
+            logger.info(f"Setting lr {config_dict[key]} for {key}")
         param_list = config_dict
     else:
         param_list = config.param_list
@@ -31,19 +38,21 @@ def main(config):
         with open(checkpoint_file, 'rb') as f:
             checkpoint = pickle.load(f)
         if 'config' in checkpoint:
-            vars(config).update(checkpoint['config']) #Update instead of replace because of possible new options
+            vars(config).update(vars(checkpoint['config'])) #Update instead of replace because of possible new options
             config.load_checkpoint = checkpoint_file
 
-            print(f"Loaded checkpoint {checkpoint_file}. Continuing fit with parameters: {config}")
+            logger.info(f"Loaded checkpoint {checkpoint_file}. Continuing fit with parameters: {config}")
 
             prev_iter = len(checkpoint[f'{config.param_list[0]}_iter'])
+            last_epoch = len(checkpoint[config.param_list[0]]) - 1
             config.iterations = config.iterations - prev_iter
+            config.lr_kw['last_epoch'] = last_epoch
             
-            print(f"{prev_iter} iterations already computed, {config.iterations} left")
+            logger.info(f"{prev_iter} iterations already computed in {last_epoch + 1} epochs, {config.iterations} left")
             
 
     if config.print_input:
-        print("fit label: ", config.out_label)
+        logger.info(f"fit label: {config.out_label}")
 
     iterations = config.iterations
     max_nbatch = config.max_nbatch
@@ -57,7 +66,7 @@ def main(config):
 
     batch_sz = config.batch_sz
     if config.max_batch_len is not None and batch_sz != 1:
-        print("Need batch size == 1 for splitting in dx chunks. Setting now...")
+        logger.warning("Need batch size == 1 for splitting in dx chunks. Setting now...")
         batch_sz = 1
 
     tracks_dataloader = DataLoader(dataset,
@@ -190,5 +199,5 @@ if __name__ == '__main__':
         retval = 1
         status_message = 'Error: Fitting failed.'
 
-    print(status_message)
+    logger.info(status_message)
     exit(retval)

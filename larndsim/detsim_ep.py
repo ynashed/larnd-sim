@@ -15,7 +15,7 @@ from .utils import diff_arange
 import logging
 
 logging.basicConfig()
-logger = logging.getLogger('detsim')
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 logger.info("DETSIM MODULE PARAMETERS")
 
@@ -179,13 +179,14 @@ class detsim(consts):
                    (-self.erf_hack(b/padded_sqrt_a_2) +
                     self.erf_hack((b + 2*(a*Deltar)[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis])/
                                   padded_sqrt_a_2)) / padded_sqrt_a_2
-
-       # expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta + ep.log(factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + ep.log(integral))
-        #expo = ep.where(expo.isnan(), 0, expo)
+        
+        # expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta + ep.log(factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + ep.log(integral))
+        # expo = ep.where(expo.isnan(), 0, expo)
         #Avoid logs by bringing down - should be equiv?
         expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta) * \
                factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]*integral
-
+        expo = ep.where(expo.isnan(), 0, expo)
+        
         #TODO: Figure out a way to do the sum over the sampling cube here.
         # Ask about the x_dist, y_dist > pixel_pitch/2 conditions in the original simulation
         return expo
