@@ -41,4 +41,4 @@ class sim_with_grad(quench, drift, pixels_from_track, detsim, fee):
 
         nb_bytes_per_elt = 128
 
-        return nb_elts*nb_bytes_per_elt/1024/1024 #Returns in Mio
+        return nb_elts*nb_bytes_per_elt/1024/1024 + 200 #Returns in Mio with a safety margin
