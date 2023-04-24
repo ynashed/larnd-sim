@@ -183,9 +183,12 @@ class detsim(consts):
         # expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta + ep.log(factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) + ep.log(integral))
         # expo = ep.where(expo.isnan(), 0, expo)
         #Avoid logs by bringing down - should be equiv?
-        expo = ep.exp(b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta) * \
-               factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]*integral
+        expo_factor = ep.where(ep.logical_and(factor != 0, integral != 0), b*b/(4*a[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]) - delta, 0)
+        expo = ep.exp(expo_factor)*factor[:, ep.newaxis, ep.newaxis, ep.newaxis, ep.newaxis]*integral
+        # logger.debug(f"Got {np.count_nonzero(np.isnan(expo.raw.detach().cpu().numpy()))} NaNs in expo")
         expo = ep.where(expo.isnan(), 0, expo)
+
+        
         
         #TODO: Figure out a way to do the sum over the sampling cube here.
         # Ask about the x_dist, y_dist > pixel_pitch/2 conditions in the original simulation
