@@ -11,7 +11,7 @@ from .consts_ep import consts
 import logging
 
 logging.basicConfig()
-logger = logging.getLogger("drifting")
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 logger.info("DRIFTING MODULE PARAMETERS")
 

@@ -25,8 +25,10 @@ class sim_with_grad(quench, drift, pixels_from_track, detsim, fee):
         x_diff = ep.abs(tracks_ep[:, fields.index("x_end")] - tracks_ep[:, fields.index("x_start")])
         y_diff = ep.abs(tracks_ep[:, fields.index("y_end")] - tracks_ep[:, fields.index("y_start")])
 
+        cond = x_diff.square() + y_diff.square() > 0
 
-        cotan2 = (z_diff.square())/(x_diff.square() + y_diff.square())
+        cotan2 = ep.where(cond, z_diff.square()/(x_diff.square() + y_diff.square()), 0)
+
         pixel_diagonal = sqrt(self.pixel_pitch ** 2 + self.pixel_pitch ** 2)
         sigma_T = sqrt(((self.drift_length + 0.5)/self.vdrift)*2*self.tran_diff)
         sigma_L = sqrt(((self.drift_length + 0.5)/self.vdrift)*2*self.long_diff)
@@ -39,4 +41,4 @@ class sim_with_grad(quench, drift, pixels_from_track, detsim, fee):
 
         nb_bytes_per_elt = 128
 
-        return nb_elts*nb_bytes_per_elt/1024/1024 #Returns in Mio
+        return nb_elts*nb_bytes_per_elt/1024/1024 + 200 #Returns in Mio with a safety margin

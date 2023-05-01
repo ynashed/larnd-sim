@@ -4,6 +4,10 @@ import torch
 from torch.utils.data import Dataset
 from numpy.lib import recfunctions as rfn
 import random
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 def torch_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)
@@ -78,7 +82,7 @@ class TracksDataset(Dataset):
                 fit_tracks.append(all_tracks[i_rand])
 
         if print_input:
-            print("training set [ev, trk]: ", fit_index)
+            logger.info(f"training set [ev, trk]: {fit_index}")
       
         if max_batch_len is not None:
             batches = []
@@ -103,10 +107,10 @@ class TracksDataset(Dataset):
                             batches.append(torch.stack(batch_here))
                             tot_data_length += tot_length - segment[self.track_fields.index("dx")]
                             if print_input:
-                                print("~ [batch ID]: ", len(batches))
-                                print("  batch length: ", tot_length - segment[self.track_fields.index("dx")])
-                                print("  event IDs: ", ev_here)
-                                print("  track IDs: ", trk_here)
+                                logger.info(f"~ [batch ID]: {len(batches)}")
+                                logger.info(f"  batch length: {tot_length - segment[self.track_fields.index('dx')]}")
+                                logger.info(f"  event IDs: {ev_here}")
+                                logger.info(f"  track IDs: {trk_here}")
                         batch_here = []
                         ev_here = []
                         trk_here = []
@@ -126,9 +130,9 @@ class TracksDataset(Dataset):
             
             fit_tracks = batches
 
-            print(f"-- The used data includes a total track length of {tot_data_length} cm.")
-            print(f"-- The maximum batch track length is {max_batch_len} cm.")
-            print(f"-- There are {len(batches)} different batches in total.")
+            logger.info(f"-- The used data includes a total track length of {tot_data_length} cm.")
+            logger.info(f"-- The maximum batch track length is {max_batch_len} cm.")
+            logger.info(f"-- There are {len(batches)} different batches in total.")
 
         self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = -99) 
 
