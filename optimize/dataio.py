@@ -140,7 +140,7 @@ class TracksDataset(Dataset):
         return len(self.tracks)
 
     def __getitem__(self, idx):
-        return self.tracks[idx].double()
+        return self.tracks[idx].float()
         
     def get_track_fields(self):
         return self.track_fields
