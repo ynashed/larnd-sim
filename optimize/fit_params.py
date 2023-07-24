@@ -124,7 +124,7 @@ class ParamFitter:
                     setattr(self.sim_iter, param, normalize_param(init_val, param, scheme=self.norm_scheme))
                 else:
                     setattr(self.sim_iter, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme))
-
+                
         # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
         self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
         self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
@@ -209,6 +209,7 @@ class ParamFitter:
                 self.training_history[param+"_iter"] = []
 
                 self.training_history[param + '_target'] = []
+                self.training_history[param + '_init'] = [normalize_param(getattr(self.sim_iter, param).item(), param, scheme=self.norm_scheme, undo_norm=True)]
                 self.training_history[param + '_lr'] = [lr_dict[param]]
             for param in self.shift_no_fit:
                 self.training_history[param + '_target'] = []
@@ -384,7 +385,30 @@ class ParamFitter:
                                                                                             param, scheme=self.norm_scheme, undo_norm=True))
 
                         else:
+                            if len(self.training_history['losses_iter']) > 0:
+                                self.training_history['losses_iter'].append(self.training_history['losses_iter'][-1])
+                                for param in self.relevant_params_list:
+                                    self.training_history[param+"_iter"].append(self.training_history[param+"_iter"][-1])
+                                    self.training_history[param+"_grad"].append(self.training_history[param+"_grad"][-1])
+                            else:
+                                self.training_history['losses_iter'].append(0.)
+                                for param in self.relevant_params_list:
+                                    self.training_history[param+"_iter"].append(self.training_history[param+"_init"][0])
+                                    self.training_history[param+"_grad"].append(0.)
+
                             logger.warning(f"Got {nan_check} gradients with a NaN value!")
+
+                    else:
+                        if len(self.training_history['losses_iter']) > 0:
+                            self.training_history['losses_iter'].append(self.training_history['losses_iter'][-1])
+                            for param in self.relevant_params_list:
+                                self.training_history[param+"_iter"].append(self.training_history[param+"_iter"][-1])
+                                self.training_history[param+"_grad"].append(self.training_history[param+"_grad"][-1])
+                        else:
+                            self.training_history['losses_iter'].append(0.)
+                            for param in self.relevant_params_list:
+                                self.training_history[param+"_iter"].append(self.training_history[param+"_init"][0])
+                                self.training_history[param+"_grad"].append(0.)
 
                     if iterations is not None:
                         if total_iter % print_freq == 0:
