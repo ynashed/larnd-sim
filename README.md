@@ -69,6 +69,8 @@ Most of the physics code is in `larndsim/`, while the optimization code is in `o
 SDF (so that you can use the corresponding resources and file paths). The heart of the user interface is the file `optimize/example_run.py`, 
 which makes use of the `ParamFitter` class defined in `optimize/fit_params.py`, as well as the data handling of `optimize/dataio.py`. 
 
+In this version, data can be **"preloaded"** by running `sbatch optimize/scripts/`
+
 An image containing all required packages is located at:
 `/sdf/group/neutrino/images/larndsim_latest.sif`
 
@@ -102,7 +104,7 @@ to make something like this plot:
 
 Which was made with a very very simple plotting script
 ``` bash
-python make_plots.py --params Ab --label Ab_SDTW_lr1e-2_5trk_test --seeds 1 2 3 4 5 --ext png
+singularity exec --bind /fs /sdf/group/neutrino/images/latest.py python3 make_plots.py --params Ab --label Ab_SDTW_lr1e-2_5trk_test --seeds 1 2 3 4 5 --ext png
 ```
 
 You might notice this looks quite wiggly -- this is often a sign of the learning rate being too high.  This can be tuned with the `--lr` flag -- 
