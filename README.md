@@ -143,7 +143,8 @@ Make_plots.py has the capability to plot dEdx counts from input edep-sim .h5 fil
 Make sure you are in the directory where your .pkl files are, which by default are stored in `fit_result/`. 
 - choose which runs to plot using `--label my_run_label` to search for the label in the .pkl file name.
 - You can specify which seeds to plot using `--seeds 1 3 5 8` for any number of relevant seeds. 
-Use --plot followed by any of the following keywords to run various plots
+
+Use `--plot` followed by any of the following keywords to run various plots
 - all, param: plot parameter iterations
 - conv: plot parameter convergences
 - loss [UNIF_LEN] [avg]: plot simulation loss smoothed with a moving average UNIF_LEN large, and use an updating average with 'avg'
