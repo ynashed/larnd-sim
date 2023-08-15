@@ -69,7 +69,7 @@ Most of the physics code is in `larndsim/`, while the optimization code is in `o
 SDF (so that you can use the corresponding resources and file paths). The heart of the user interface is the file `optimize/example_run.py`, 
 which makes use of the `ParamFitter` class defined in `optimize/fit_params.py`, as well as the data handling of `optimize/dataio.py`. 
 
-In this version, data can be **"preloaded"** by running `sbatch optimize/scripts/`
+In this version, data can be **"preloaded"** by running `sbatch optimize/scripts/make_dataio_cut.sh` from the top-level `larnd-sim` directory, which runs `make_dataio_cut.py`.
 
 An image containing all required packages is located at:
 `/sdf/group/neutrino/images/larndsim_latest.sif`
@@ -102,10 +102,11 @@ to make something like this plot:
 
 <img alt="example fit" src="figures/plot_Ab_Ab_SDTW_lr1e-2_5trk_test.png" height="500">
 
-Which was made with a very very simple plotting script
+Which was made with a not-so very simple plotting script
 ``` bash
 singularity exec --bind /fs /sdf/group/neutrino/images/latest.py python3 make_plots.py --params Ab --label Ab_SDTW_lr1e-2_5trk_test --seeds 1 2 3 4 5 --ext png
 ```
+This plotting scripts has been upgraded considerably to plot many other things, which is discussed in more detail below.
 
 You might notice this looks quite wiggly -- this is often a sign of the learning rate being too high.  This can be tuned with the `--lr` flag -- 
 try it yourself!
@@ -114,7 +115,7 @@ The parameters of interest for fitting are (currently), in rough priority order:
 - Ab
 - kb
 - tran_diff
-- vdrift
+- vdrift <-> Field  (_they are linked_)
 - lifetime
 - eField
 - long_diff
@@ -126,6 +127,7 @@ The example we had you run does a fit for a single parameter (Ab) on a limited s
 either:
 - A space separated list of parameters (one learning rate used for all)
 - A `.yaml` file defining the list of parameters and their associated learning rates, e.g.,
+one is already stored in `optimize/scripts/param_list.yaml`
 
 ``` yaml
 Ab: 1e-2
@@ -134,3 +136,15 @@ kb: 1e-1
 will run a simultaneous (2D) fit in `Ab` and `kb` with learning rates 1e-2 and 1e-1 respectively.
 
 There are several other configuration flags, please see the included help text for more information on those. 
+
+## Making plots using `make_plots.py`
+
+Make_plots.py has the capability to plot dEdx counts from input edep-sim .h5 files, simulation loss values from .pkl run files, parameter fit iterations from .pkl's, and parameter convergences from .pkl's.
+Make sure you are in the directory where your .pkl files are, which by default are stored in `fit_result/`. 
+- choose which runs to plot using `--label my_run_label` to search for the label in the .pkl file name.
+- You can specify which seeds to plot using `--seeds 1 3 5 8` for any number of relevant seeds. 
+Use --plot followed by any of the following keywords to run various plots
+- all, param: plot parameter iterations
+- conv: plot parameter convergences
+- loss [UNIF_LEN] [avg]: plot simulation loss smoothed with a moving average UNIF_LEN large, and use an updating average with 'avg'
+- dedx [NUM_BINS]: plot a histogram of dEdx counts in various input data. Customize in `make_plots.py` line 471
