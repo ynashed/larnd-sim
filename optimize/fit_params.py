@@ -7,11 +7,11 @@ import numpy as np
 from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
 from larndsim.sim_with_grad import sim_with_grad
-import logging
 import torch
 
 from tqdm import tqdm
 
+import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -184,8 +184,11 @@ class ParamFitter:
 
             t_only = self.no_adc
             adc_only = not t_only
+            # once cuda implementation in soft_dtw_cuda.py is set up
+            use_cuda = self.device == 'cuda'
 
             self.loss_fn_kw = {
+                                'use_cuda' : use_cuda,
                                 'adc_only' : adc_only,
                                 't_only' : t_only,
                                 'gamma' : 1
@@ -458,7 +461,12 @@ class ParamFitter:
                     os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl')
 
     def loss_scan_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
-
+        """
+        Called by loss_landscape.py
+        Old script that gets both loss and gradient, iterating over a parameter range
+        Can be used to make gradient plot
+        """
+        
         if len(self.relevant_params_list) > 1:
             raise NotImplementedError("Can't do loss scan for more than one variable at a time!")
 
@@ -609,4 +617,97 @@ class ParamFitter:
             with open(outname+".pkl", "wb") as f:
                 pickle.dump(recording, f)
 
+        return recording, outname
+    
+    def scan_batch_loss(self, dataloader, shuffle=False, save_freq=5, print_freq=1, seed=None, data_seed=None, seed_init=None):
+        """
+        Called by loss_landscape.py
+         - Save only the loss values without iterating parameters through gradient descent
+         - calculates loss from target with loss from initial value for parameter, across all batches
+        """
+        # make a folder for the pixel target
+        if not os.path.exists('fit_result'):
+            os.mkdir('fit_result')
+            # use os.makedirs if path has multiple directories
+        
+        # set initial values in recording
+        recording = {}
+        if seed:
+            recording['seed'] = seed
+        if data_seed:
+            recording['data_seed'] = data_seed
+        if seed_init:
+            recording['seed_init'] = seed_init
+        for param in self.relevant_params_list:
+            recording[param+"_iter"] = getattr(self.sim_physics, param)
+            recording[param+"_target"] = getattr(self.sim_target, param)
+
+        # The scanning loop
+        losses_batch = [] # losses per batch
+        last_i = 0
+        infinite_loss = ()
+        with tqdm(total=len(dataloader)) as pbar:
+            for i, selected_tracks_bt_torch in enumerate(dataloader):
+                # Get rid of the extra dimension and padding elements for the loaded data
+                selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
+                selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
+                event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
+
+                losses_ev = [] # losses per event
+                for ev in unique_eventIDs:
+                    #logger.info("batch: " + str(i) + '; ev:' + str(int(ev)))
+                    selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
+                    selected_tracks_torch = selected_tracks_torch.to(self.device)
+
+                    # set up target per event
+                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                                                          event_id_map, unique_eventIDs,
+                                                                          return_unique_pix=True)
+                    embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+                    # Update chunk sizes based on memory calculations
+                    self.optimize_batch_memory(self.sim_physics, selected_tracks_torch)
+                    # Simulate and get output
+                    # only need to update sim_physics iter if params are actually changing
+                    output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
+                                                              event_id_map, unique_eventIDs,
+                                                              return_unique_pix=True)
+                    # Embed both output and target into "full" image space
+                    embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
+                    # Calc loss between simulated and target
+                    loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
+
+                    # To be investigated -- sometimes we get nans. Avoid adding to event losses if so
+                    if not loss.isnan(): 
+                        if loss.isinf():
+                            logger.warning("Got infinite loss! batch: " + str(i) + "; ev:" + str(int(ev)))
+                        losses_ev.append(loss)
+                    else:
+                        logger.warning("Got NaN as loss! batch: " + str(i) + "; ev:" + str(int(ev)))
+
+                # Average out the loss in different events per batch
+                if len(losses_ev) > 0:
+                    loss_ev_mean = torch.mean(torch.stack(losses_ev))
+                    losses_batch.append(loss_ev_mean.item())
+                else:
+                    losses_batch.append(np.nan)
+
+                # store the losses per batch
+                if i % save_freq == 0:
+                    recording['losses_iter'] = losses_batch
+                    outname = f'fit_result/losses_batch{i}_{self.out_label}.pkl'
+                    with open(outname, "wb") as f:
+                        pickle.dump(recording, f)
+                    if os.path.exists(f'fit_result/losses_batch{last_i}_{self.out_label}.pkl'):
+                        os.remove(f'fit_result/losses_batch{last_i}_{self.out_label}.pkl')
+                    last_i = i
+
+                pbar.update(1)
+        # store the losses one final time
+        recording['losses_iter'] = losses_batch
+        outname = f'fit_result/losses_batch{i}_{self.out_label}.pkl'
+        with open(outname, "wb") as f:
+            pickle.dump(recording, f)
+        if os.path.exists(f'fit_result/losses_batch{last_i}_{self.out_label}.pkl'):
+            os.remove(f'fit_result/losses_batch{last_i}_{self.out_label}.pkl')
+        
         return recording, outname
