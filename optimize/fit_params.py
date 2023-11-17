@@ -312,10 +312,19 @@ class ParamFitter:
                     # Calculate loss per event
                     for ev in unique_eventIDs:
                         selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
-                        selected_tracks_torch = selected_tracks_torch.to(self.device)
+
+                        # flatten the dEdx and dE for the iteration input
+                        selected_tracks_torch_target = selected_tracks_torch
+                        selected_tracks_torch_output = selected_tracks_torch
+
+                        selected_tracks_torch_output[:, self.track_fields.index('dEdx')] = 2
+                        selected_tracks_torch_output[:, self.track_fields.index('dE')] = 2 * selected_tracks_torch_output[:, self.track_fields.index('dx')]
+
+                        selected_tracks_torch_target = selected_tracks_torch_target.to(self.device)
+                        selected_tracks_torch_output = selected_tracks_torch_output.to(self.device)
 
                         if shuffle:
-                            target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                            target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch_target, self.track_fields,
                                                                           event_id_map, unique_eventIDs,
                                                                           return_unique_pix=True)
                             embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
@@ -325,9 +334,9 @@ class ParamFitter:
                                 #No need to store gradients for forward-only pass
                                 with torch.no_grad():
                                     #Update chunk sizes based on memory calculations
-                                    self.optimize_batch_memory(self.sim_target, selected_tracks_torch)
+                                    self.optimize_batch_memory(self.sim_target, selected_tracks_torch_target)
 
-                                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch_target, self.track_fields,
                                                                                 event_id_map, unique_eventIDs,
                                                                                 return_unique_pix=True)
                                     embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
@@ -344,8 +353,8 @@ class ParamFitter:
 
                         # Simulate and get output
                         #Update chunk sizes based on memory calculations
-                        self.optimize_batch_memory(self.sim_physics, selected_tracks_torch)
-                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
+                        self.optimize_batch_memory(self.sim_physics, selected_tracks_torch_output)
+                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch_output, self.track_fields,
                                                   event_id_map, unique_eventIDs,
                                                   return_unique_pix=True)
 
