@@ -185,10 +185,10 @@ class ParamFitter:
             t_only = self.no_adc
             adc_only = not t_only
             # once cuda implementation in soft_dtw_cuda.py is set up
-            use_cuda = self.device == 'cuda'
+            #use_cuda = self.device == 'cuda'
 
             self.loss_fn_kw = {
-                                'use_cuda' : use_cuda,
+            #                    'use_cuda' : use_cuda,
                                 'adc_only' : adc_only,
                                 't_only' : t_only,
                                 'gamma' : 1
