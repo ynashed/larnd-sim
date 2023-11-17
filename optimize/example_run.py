@@ -2,6 +2,8 @@
 
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 import argparse
 import yaml
@@ -11,12 +13,9 @@ from torch.utils.data import DataLoader
 import json
 import numpy as np
 
-
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 def make_param_list(config):
     if len(config.param_list) == 1 and os.path.splitext(config.param_list[0])[1] == ".yaml":
@@ -43,7 +42,8 @@ def main(config):
             max_nbatch = iterations
 
     dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
-                            track_len_sel=config.track_len_sel, max_abs_costheta_sel=config.max_abs_costheta_sel, min_abs_segz_sel=config.min_abs_segz_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input)
+                            track_len_sel=config.track_len_sel, max_abs_costheta_sel=config.max_abs_costheta_sel, min_abs_segz_sel=config.min_abs_segz_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input,
+                            preload=config.preload)
 
     batch_sz = config.batch_sz
     if config.max_batch_len is not None and batch_sz != 1:
@@ -55,6 +55,7 @@ def main(config):
                                   batch_size=batch_sz,
                                   pin_memory=True, num_workers=config.num_workers)
 
+    # initialize simulation
     # For readout noise: no_noise overrides if explicitly set to True. Otherwise, turn on noise
     # individually for target and guess
     param_list = make_param_list(config)
@@ -72,6 +73,7 @@ def main(config):
                             set_target_vals=config.set_target_vals, vary_init=config.vary_init, seed_init=config.seed_init,
                             config = config)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
+    # run simulation
     param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
     return 0, 'Fitting successful'
@@ -171,6 +173,8 @@ if __name__ == '__main__':
                         help="Optimize the pixel chunk size to reach the specified GPU memory per batch, in MiB")
     parser.add_argument("--skip_pixels", dest="skip_pixels", default=False, action="store_true",
                         help="Iterating only over the pixels of each track (no cartesian product of all pixels x all tracks)")
+    parser.add_argument("--preload", dest="preload", default=False, action="store_true", 
+                        help="If input file contains tracks already cut to dataio standards")
 
     try:
         args = parser.parse_args()
