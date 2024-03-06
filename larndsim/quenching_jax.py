@@ -4,7 +4,7 @@ through the detector
 """
 
 import jax.numpy as jnp
-from jax import grad, jit, vmap
+from jax import grad, jit, vmap, debug
 from functools import partial
 
 from .consts_ep import consts
@@ -28,8 +28,8 @@ def birks_model(dEdx, eField, lArDensity, Ab, kb):
     return Ab / (1 + kb * dEdx / (eField * lArDensity))
 
 @jit
-def get_nelectrons(dEdx, recomb, MeVToElectrons):
-    return recomb * dEdx * MeVToElectrons
+def get_nelectrons(dE, recomb, MeVToElectrons):
+    return recomb * dE * MeVToElectrons
 
 @partial(jit, static_argnames=['fields', 'mode'])
 def quench(params, tracks, mode, fields):
@@ -51,7 +51,7 @@ def quench(params, tracks, mode, fields):
         recomb = birks_model(tracks[:, fields.index("dEdx")], params.eField, params.lArDensity, params.Ab, params.kb)
     else:
         raise ValueError("Invalid recombination mode: must be 'box' or 'birks'")
-    
+
     #TODO: n_electrons should be int, but truncation makes gradients vanish
-    updated_tracks = tracks.at[:, fields.index("n_electrons")].set(get_nelectrons(tracks[:, fields.index("dEdx")], recomb, params.MeVToElectrons))
+    updated_tracks = tracks.at[:, fields.index("n_electrons")].set(get_nelectrons(tracks[:, fields.index("dE")], recomb, params.MeVToElectrons))
     return updated_tracks

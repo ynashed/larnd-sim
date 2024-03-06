@@ -4,6 +4,7 @@ on the pixels
 """
 
 import jax.numpy as jnp
+from jax.profiler import annotate_function
 from jax import grad, jit, vmap, lax, make_jaxpr, random, debug
 from jax.nn import sigmoid
 from functools import partial
@@ -19,6 +20,84 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 logger.info("DETSIM MODULE PARAMETERS")
 
+@annotate_function
+@jit
+def accumulate_signals(wfs, signals, pixID, start_ticks):
+    # Get the number of pixels and ticks
+    Npixels, Nticks = wfs.shape
+
+    # Compute indices for updating wfs, taking into account start_ticks
+    start_indices = jnp.expand_dims(pixID, axis=1) * Nticks + start_ticks[:, jnp.newaxis]
+    end_indices = start_indices + jnp.arange(signals.shape[1])
+
+    # Flatten the indices
+    flat_indices = jnp.ravel(end_indices)
+
+    # Update wfs with accumulated signals
+    wfs = wfs.ravel()
+    wfs = wfs.at[(flat_indices,)].add(signals.ravel())
+    return wfs.reshape((Npixels, Nticks))
+
+@annotate_function
+@jit
+def pixel2id(params, pixel_x, pixel_y, pixel_plane, eventID):
+    """
+    Convert the x,y,plane tuple to a unique identifier
+
+    Args:
+        pixel_x (int): number of pixel pitches in x-dimension
+        pixel_y (int): number of pixel pitches in y-dimension
+        pixel_plane (int): pixel plane number
+
+    Returns:
+        unique integer id
+    """
+    outside = (pixel_x >= params.n_pixels[0]) | (pixel_y >= params.n_pixels[1])
+    return jnp.where(outside, -1, pixel_x + params.n_pixels[0] * (pixel_y + params.n_pixels[1] * pixel_plane) + eventID*params.n_pixels[0]*params.n_pixels[1]*params.tpc_borders.shape[0])
+
+@annotate_function
+@jit
+def id2pixel(params, pid):
+    """
+    Convert the unique pixel identifer to an x,y,plane tuple
+
+    Args:
+        pid (int): unique pixel identifier
+    Returns:
+        tuple: number of pixel pitches in x-dimension,
+            number of pixel pitches in y-dimension,
+            pixel plane number
+    """
+    return (pid % params.n_pixels[0], (pid // params.n_pixels[0]) % params.n_pixels[1],
+            (pid // (params.n_pixels[0] * params.n_pixels[1])) % params.tpc_borders.shape[0],
+            pid // (params.n_pixels[0] * params.n_pixels[1]*params.tpc_borders.shape[0]))
+
+@annotate_function
+@partial(jit, static_argnames=['fields'])
+def generate_electrons(tracks, fields):
+    key = random.PRNGKey(0)
+    sigmas = jnp.stack([tracks[:, fields.index("tran_diff")],
+                        tracks[:, fields.index("tran_diff")],
+                        tracks[:, fields.index("long_diff")]], axis=1)
+    rnd_pos = random.normal(key, (tracks.shape[0], 3))*sigmas
+    electrons = tracks.copy()
+    electrons = electrons.at[:, fields.index('x')].set(electrons[:, fields.index('x')] + rnd_pos[:, 0])
+    electrons = electrons.at[:, fields.index('y')].set(electrons[:, fields.index('y')] + rnd_pos[:, 1])
+    electrons = electrons.at[:, fields.index('z')].set(electrons[:, fields.index('z')] + rnd_pos[:, 2])
+
+    return electrons
+
+@annotate_function
+@partial(jit, static_argnames=['fields'])
+def get_pixels(params, electrons, fields):
+    borders = lax.map(lambda i: params.tpc_borders[i], electrons[:, fields.index("pixel_plane")].astype(int))
+    pos = jnp.stack([(electrons[:, fields.index("x")] - borders[:, 0, 0]) // params.pixel_pitch,
+            (electrons[:, fields.index("y")] - borders[:, 1, 0]) // params.pixel_pitch], axis=1)
+
+    pixels = (pos + 0.5).astype(int)
+    return pixel2id(params, pixels[:, 0], pixels[:, 1], electrons[:, fields.index("pixel_plane")].astype(int), electrons[:, fields.index("eventID")].astype(int))
+
+@annotate_function
 @jit
 def truncexpon(x, loc=0, scale=1, y_cutoff=-10., rate=100):
     """
@@ -31,6 +110,7 @@ def truncexpon(x, loc=0, scale=1, y_cutoff=-10., rate=100):
     y = jnp.maximum(y, y_cutoff)
     return sigmoid(rate*y)*jnp.exp(-y) / scale
 
+@annotate_function
 @jit
 def current_model(t, t0, x, y):
     """
@@ -138,59 +218,80 @@ def overlapping_segment(x, y, start, end, radius):
 
     return new_start, new_end
 
-@jit
-def current_mc(params, subsegment_start, subsegment_length, t_start, x_p, y_p,
-               direction, sigmas, charge, z_anode, nstep, rng_key):
-    # nstep = max(round(subsegment_length / MIN_STEP_SIZE), 1)
-    step = subsegment_length / nstep # refine step size
-    it = jnp.arange(0, params.time_max)
-    time_ticks = t_start + it * params.t_sampling
-    zero_current = jnp.zeros((params.time_max,))
-    #TODO: Ensure that time_tick is >= 0
+@annotate_function
+@partial(jit, static_argnames=['fields'])
+def current_mc(params, electrons, pixels_coord, fields):
+    nticks = int(5/params.t_sampling)
+    ticks = jnp.linspace(0, 5, nticks).reshape((1, nticks)).repeat(electrons.shape[0], axis=0)#
 
-    def current_mc_step(istep, carry):
-        signal, key = carry
+    x_dist = abs(electrons[:, fields.index('x')] - pixels_coord[:, 0])
+    y_dist = abs(electrons[:, fields.index('y')] - pixels_coord[:, 1])
 
-        x = subsegment_start[0] + step * (istep + 0.5) * direction[0]
-        y = subsegment_start[1] + step * (istep + 0.5) * direction[1]
-        z = subsegment_start[2] + step * (istep + 0.5) * direction[2]
+    # signals = jnp.array((electrons.shape[0], ticks.shape[1]))
 
-        rnd_pos = random.normal(key, (3,))*sigmas
-        x = x + rnd_pos[0]
-        y = y + rnd_pos[1]
-        z = z + rnd_pos[2]
+    z_anode = lax.map(lambda i: params.tpc_borders[i][2][0], electrons[:, fields.index("pixel_plane")].astype(int))
 
-        x_dist = abs(x_p - x)
-        y_dist = abs(y_p - y)
+    #TODO: Actually write something consistent here for the time. Needs it to be >0 for now
+    t0 = jnp.abs(electrons[:, fields.index('z')] - z_anode) / params.vdrift# - params.time_window
+    t0 = t0 - jnp.min(t0) + 5
+
+    ticks = ticks + t0[:, jnp.newaxis]
+
+    return t0, current_model(ticks, t0[:, jnp.newaxis], x_dist[:, jnp.newaxis], y_dist[:, jnp.newaxis])*electrons[:, fields.index("n_electrons")].reshape((electrons.shape[0], 1))*params.e_charge
+
+# @jit
+# def current_mc(params, subsegment_start, subsegment_length, t_start, x_p, y_p,
+#                direction, sigmas, charge, z_anode, nstep, rng_key):
+#     # nstep = max(round(subsegment_length / MIN_STEP_SIZE), 1)
+#     step = subsegment_length / nstep # refine step size
+#     it = jnp.arange(0, params.time_max)
+#     time_ticks = t_start + it * params.t_sampling
+#     zero_current = jnp.zeros((params.time_max,))
+#     #TODO: Ensure that time_tick is >= 0
+
+#     def current_mc_step(istep, carry):
+#         signal, key = carry
+
+#         x = subsegment_start[0] + step * (istep + 0.5) * direction[0]
+#         y = subsegment_start[1] + step * (istep + 0.5) * direction[1]
+#         z = subsegment_start[2] + step * (istep + 0.5) * direction[2]
+
+#         rnd_pos = random.normal(key, (3,))*sigmas
+#         x = x + rnd_pos[0]
+#         y = y + rnd_pos[1]
+#         z = z + rnd_pos[2]
+
+#         x_dist = abs(x_p - x)
+#         y_dist = abs(y_p - y)
         
 
-        t0 = jnp.abs(z - z_anode) / params.vdrift - params.time_window
-        # debug.print("direction: {direction}", direction=direction)
-        # debug.print("t0: {t0}", t0=t0)
-        # debug.print("time_ticks: {time_ticks}", time_ticks=time_ticks)
-        # if not t0 < time_tick < t0 + detector.TIME_WINDOW:
-        #     continue
+#         t0 = jnp.abs(z - z_anode) / params.vdrift - params.time_window
+#         # debug.print("direction: {direction}", direction=direction)
+#         # debug.print("t0: {t0}", t0=t0)
+#         # debug.print("time_ticks: {time_ticks}", time_ticks=time_ticks)
+#         # if not t0 < time_tick < t0 + detector.TIME_WINDOW:
+#         #     continue
 
-        # if x_dist > detector.RESPONSE_BIN_SIZE * response.shape[0]:
-        #     continue
-        # if y_dist > detector.RESPONSE_BIN_SIZE * response.shape[1]:
-        #     continue
+#         # if x_dist > detector.RESPONSE_BIN_SIZE * response.shape[0]:
+#         #     continue
+#         # if y_dist > detector.RESPONSE_BIN_SIZE * response.shape[1]:
+#         #     continue
 
-        signal += charge * lax.select(t0 < time_ticks, current_model(time_ticks, t0, x_dist, y_dist), zero_current)
+#         signal += charge * lax.select(t0 < time_ticks, current_model(time_ticks, t0, x_dist, y_dist), zero_current)
 
-        return (signal , random.split(key, 1)[0])
-        # return random.split(key, 1)[0]
+#         return (signal , random.split(key, 1)[0])
+#         # return random.split(key, 1)[0]
     
-    def select_current_mc(istep, carry):
-        return lax.cond(istep < nstep, current_mc_step, lambda i, c: c, istep, carry)
+#     def select_current_mc(istep, carry):
+#         return lax.cond(istep < nstep, current_mc_step, lambda i, c: c, istep, carry)
     
-    # total_current = lax.fori_loop(0, nstep, current_mc_step, rng_key)
+#     # total_current = lax.fori_loop(0, nstep, current_mc_step, rng_key)
     
-    # total_current, _ = lax.fori_loop(0, nstep, current_mc_step, (zero_current, rng_key))
-    total_current, _ = lax.fori_loop(0, 100, select_current_mc, (zero_current, rng_key))
-    # print((subsegment_start, subsegment_length, x_p, y_p, direction, sigmas, charge, nstep, rng_key))
+#     # total_current, _ = lax.fori_loop(0, nstep, current_mc_step, (zero_current, rng_key))
+#     total_current, _ = lax.fori_loop(0, 100, select_current_mc, (zero_current, rng_key))
+#     # print((subsegment_start, subsegment_length, x_p, y_p, direction, sigmas, charge, nstep, rng_key))
 
-    return total_current
+#     return total_current
 
 
 @partial(jit, static_argnames=['fields'])

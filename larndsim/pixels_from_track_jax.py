@@ -74,18 +74,32 @@ def get_max_active_pixels(params, tracks, fields):
     return max_active_pixels
 
 @jit
-def get_pixel_coordinates(params, pixels_sp):
+def get_pixel_coordinates(params, xpitch, ypitch, plane):
     """
     Returns the coordinates of the pixel center given the pixel IDs
     """
 
-    plane_id = pixels_sp[..., 1] // params.n_pixels[0]
-    borders = jnp.stack(lax.map(lambda i: params.tpc_borders[i], plane_id.astype(int)))
+    borders = jnp.stack(lax.map(lambda i: params.tpc_borders[i], plane.astype(int)))
 
-    pix_x = (pixels_sp[..., 1] - params.n_pixels[0] * plane_id) * params.pixel_pitch + borders[..., 0, 0] + params.pixel_pitch/2
-    pix_y = pixels_sp[..., 2] * params.pixel_pitch + borders[..., 1, 0] + params.pixel_pitch/2
+    pix_x = xpitch  * params.pixel_pitch + borders[..., 0, 0] + params.pixel_pitch/2
+    pix_y = ypitch * params.pixel_pitch + borders[..., 1, 0] + params.pixel_pitch/2
     # return pix_x[...,jnp.newaxis], pix_y[...,jnp.newaxis]
-    return pix_x, pix_y
+    return jnp.column_stack([pix_x, pix_y])
+    #TODO: REALLY LOOK IN DETAILS AT THE PIXEL LAYOUT THING
+
+# @jit
+# def get_pixel_coordinates(params, pixels_sp):
+#     """
+#     Returns the coordinates of the pixel center given the pixel IDs
+#     """
+
+#     plane_id = pixels_sp[..., 1] // params.n_pixels[0]
+#     borders = jnp.stack(lax.map(lambda i: params.tpc_borders[i], plane_id.astype(int)))
+
+#     pix_x = (pixels_sp[..., 1] - params.n_pixels[0] * plane_id) * params.pixel_pitch + borders[..., 0, 0] + params.pixel_pitch/2
+#     pix_y = pixels_sp[..., 2] * params.pixel_pitch + borders[..., 1, 0] + params.pixel_pitch/2
+#     # return pix_x[...,jnp.newaxis], pix_y[...,jnp.newaxis]
+#     return jnp.column_stack([pix_x, pix_y])
 
 def pixels_to_sp(active_pixels):
     max_idx = jnp.max(active_pixels)

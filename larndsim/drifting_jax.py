@@ -47,9 +47,9 @@ def drift(params, tracks, fields):
     tracks = tracks.at[:, fields.index("n_electrons")].set(
         tracks[:, fields.index("n_electrons")] * lifetime_red * mask)
     tracks = tracks.at[:, fields.index("long_diff")].set(
-        jnp.sqrt((drift_time + 0.5 / params.vdrift) * 2 * params.long_diff * mask))
+        jnp.sqrt((drift_time + 0.5 / params.vdrift) * 2 * params.long_diff))
     tracks = tracks.at[:, fields.index("tran_diff")].set(
-        jnp.sqrt((drift_time + 0.5 / params.vdrift) * 2 * params.tran_diff * mask))
+        jnp.sqrt((drift_time + 0.5 / params.vdrift) * 2 * params.tran_diff))
     tracks = tracks.at[:, fields.index("t")].set(
         tracks[:, fields.index("t")] + drift_time * mask)
     tracks = tracks.at[:, fields.index("t_start")].set(
