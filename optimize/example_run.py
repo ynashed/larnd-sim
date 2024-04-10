@@ -9,8 +9,8 @@ import sys, os
 import traceback
 from torch.utils.data import DataLoader
 import json
-import numpy as np
-
+import cProfile
+import jax
 
 from .fit_params import ParamFitter
 from .dataio import TracksDataset
@@ -31,7 +31,7 @@ def make_param_list(config):
 
 
 def main(config):
-
+    jax.config.update('jax_platform_name', 'cpu')
     if config.print_input:
         logger.info(f"fit label: {config.out_label}")
 
@@ -65,15 +65,18 @@ def main(config):
                             readout_noise_target=(not config.no_noise) and (not config.no_noise_target),
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
                             out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val,
-                            fit_diffs=config.fit_diffs, optimizer_fn=config.optimizer_fn,
+                            # fit_diffs=config.fit_diffs,
+                            optimizer_fn=config.optimizer_fn,
                             lr_scheduler=config.lr_scheduler, lr_kw=config.lr_kw,
                             no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit,
                             link_vdrift_eField=config.link_vdrift_eField, batch_memory=config.batch_memory, skip_pixels=config.skip_pixels,
                             set_target_vals=config.set_target_vals, vary_init=config.vary_init, seed_init=config.seed_init,
                             config = config)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
-    param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
 
+    # with cProfile.Profile() as pr:
+    param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
+    # pr.dump_stats('prof.prof')
     return 0, 'Fitting successful'
 
 if __name__ == '__main__':
@@ -141,8 +144,8 @@ if __name__ == '__main__':
                         help="Normalization scheme to use for params. Right now, divide (by nom) and standard (subtract mean, div by variance)")
     parser.add_argument("--max_clip_norm_val", dest="max_clip_norm_val", default=None, type=float,
                         help="If passed, does gradient clipping (norm)")
-    parser.add_argument("--fit_diffs", dest="fit_diffs", default=False, action="store_true",
-                        help="Turns on fitting of differences rather than direct fitting of values")
+    # parser.add_argument("--fit_diffs", dest="fit_diffs", default=False, action="store_true",
+    #                     help="Turns on fitting of differences rather than direct fitting of values")
     parser.add_argument("--optimizer_fn", dest="optimizer_fn", default="Adam",
                         help="Choose optimizer function (here Adam vs SGD")
     parser.add_argument("--lr_scheduler", dest="lr_scheduler", default=None,

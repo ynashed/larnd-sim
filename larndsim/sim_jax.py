@@ -7,10 +7,10 @@ from flax import struct
 from functools import partial
 
 from larndsim.consts_jax import consts
-from larndsim.detsim_jax import overlapping_segment, tracks_current, generate_electrons, get_pixels, id2pixel, accumulate_signals, current_mc
+from larndsim.detsim_jax import generate_electrons, get_pixels, id2pixel, accumulate_signals, current_mc
 from larndsim.quenching_jax import quench
 from larndsim.drifting_jax import drift
-from larndsim.pixels_from_track_jax import get_active_pixels, get_max_active_pixels, get_max_radius, get_neighboring_pixels_sp, pixels_to_sp, get_pixel_coordinates
+from larndsim.pixels_from_track_jax import get_pixel_coordinates
 from larndsim.fee_jax import get_adc_values, digitize
 
 def jax_from_structured(tracks):
@@ -35,29 +35,31 @@ def load_data(fname):
     tracks['z'] = x
 
     selected_tracks = tracks
-    fields = selected_tracks.dtype.names
-    return rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32), fields
+    dtype = selected_tracks.dtype
+    return rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32), dtype
 
-def chop_tracks(tracks, fields, precision=0.001):
+def chop_tracks(tracks, fields, precision=0.0001):
     def split_track(track, nsteps, length, direction, i):
         new_tracks = track.reshape(1, track.size).repeat(nsteps, axis=0)
 
         new_tracks[:, fields.index("dE")] = new_tracks[:, fields.index("dE")]*precision/(length+1e-10)
-        steps = np.arange(0, int(nsteps))
+        steps = np.arange(0, nsteps)
 
-        new_tracks[:, fields.index("x_start")] = new_tracks[:, fields.index("x_start")] + steps*precision*direction[0]
-        new_tracks[:, fields.index("y_start")] = new_tracks[:, fields.index("y_start")] + steps*precision*direction[1]
-        new_tracks[:, fields.index("z_start")] = new_tracks[:, fields.index("z_start")] + steps*precision*direction[2]
+        new_tracks[:, fields.index("x_start")] = track[fields.index("x_start")] + steps*precision*direction[0]
+        new_tracks[:, fields.index("y_start")] = track[fields.index("y_start")] + steps*precision*direction[1]
+        new_tracks[:, fields.index("z_start")] = track[fields.index("z_start")] + steps*precision*direction[2]
 
-        new_tracks[:, fields.index("x_end")] = new_tracks[:, fields.index("x_start")] + precision*(steps + 1)*direction[0]
-        new_tracks[:, fields.index("y_end")] = new_tracks[:, fields.index("y_start")] + precision*(steps + 1)*direction[1]
-        new_tracks[:, fields.index("z_end")] = new_tracks[:, fields.index("z_start")] + precision*(steps + 1)*direction[2]
+        new_tracks[:, fields.index("x_end")] = track[fields.index("x_start")] + precision*(steps + 1)*direction[0]
+        new_tracks[:, fields.index("y_end")] = track[fields.index("y_start")] + precision*(steps + 1)*direction[1]
+        new_tracks[:, fields.index("z_end")] = track[fields.index("z_start")] + precision*(steps + 1)*direction[2]
+        new_tracks[:, fields.index("dx")] = precision
 
         #Correcting the last track bit
         new_tracks[-1, fields.index("x_end")] = track[fields.index("x_end")]
         new_tracks[-1, fields.index("y_end")] = track[fields.index("y_end")]
         new_tracks[-1, fields.index("z_end")] = track[fields.index("z_end")]
         new_tracks[-1, fields.index("dE")] = track[fields.index("dE")]*(1 - precision*(nsteps - 1)/(length + 1e-10))
+        new_tracks[-1, fields.index("dx")] = length - precision*(nsteps - 1)
 
         #Finally computing the middle point once everything is ok
         new_tracks[:, fields.index("x")] = 0.5*(new_tracks[:, fields.index("x_start")] + new_tracks[:, fields.index("x_end")])
@@ -79,7 +81,7 @@ def chop_tracks(tracks, fields, precision=0.001):
     length = np.sqrt(np.sum(segment**2, axis=1, keepdims=True))
     eps = 1e-10
     direction = segment / (length + eps)
-    nsteps = np.maximum(np.round(length / precision), 1).astype(int)
+    nsteps = np.maximum(np.ceil(length / precision), 1).astype(int)
     # step_size = length/nsteps
     new_tracks = np.vstack([split_track(tracks[i], nsteps[i], length[i], direction[i], i) for i in range(tracks.shape[0])])
     return new_tracks
@@ -128,7 +130,7 @@ def order_tracks_by_z(tracks, fields):
 
     return new_tracks
 
-def loss(adcs, pIDs, adcs_ref, pIDs_ref, fields):
+def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
     # return jnp.sqrt(jnp.sum((tracks[:, fields.index("n_electrons")] - tracks_ref[:, fields.index("n_electrons")])**2))
     
     unique_pixels = jnp.sort(jnp.unique(jnp.concatenate([pIDs, pIDs_ref])))
@@ -141,20 +143,33 @@ def loss(adcs, pIDs, adcs_ref, pIDs_ref, fields):
     signals = accumulate_signals(signals, adcs, pix_renumbering, jnp.zeros_like(pix_renumbering))
     signals = accumulate_signals(signals, -adcs_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
 
+    adc_loss = jnp.sum(signals**2)
 
-    return jnp.sqrt(jnp.sum(signals**2))
+    # Add some penalty term for the time information also
 
-def simulate(params, tracks, fields):
+    # signals = jnp.zeros((nb_pixels, adcs.shape[1]))
+    # signals = accumulate_signals(signals, ticks, pix_renumbering, jnp.zeros_like(pix_renumbering))
+    # signals = accumulate_signals(signals, -ticks_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
+    # time_loss = jnp.sum(signals**2)
+    time_loss = 0
+
+    aux = {
+        'adc_loss': adc_loss,
+        'time_loss': time_loss
+    }
+
+    return adc_loss + time_loss, aux
+
+def simulate(params, tracks, fields, rngkey = 0):
     new_tracks = quench(params, tracks, 2, fields)
     new_tracks = drift(params, new_tracks, fields)
-    electrons = generate_electrons(new_tracks, fields)
+    electrons = generate_electrons(new_tracks, fields, rngkey)
     pIDs = get_pixels(params, electrons, fields)
     
     xpitch, ypitch, plane, eid = id2pixel(params, pIDs)
-
+    
     pixels_coord = get_pixel_coordinates(params, xpitch, ypitch, plane)
     t0, signals = current_mc(params, electrons, pixels_coord, fields)
-
     unique_pixels = jnp.sort(jnp.unique(pIDs))
     npixels = unique_pixels.shape[0]
 
@@ -163,18 +178,20 @@ def simulate(params, tracks, fields):
     nticks_wf = int(params.time_window/params.t_sampling)
     wfs = jnp.zeros((npixels, nticks_wf))
 
+    
     start_ticks = (t0/params.t_sampling + 0.5).astype(int)
+    earliest_tick = jnp.min(start_ticks)
 
-    wfs = accumulate_signals(wfs, signals, pix_renumbering, start_ticks)
-    # return signals, pix_renumbering, wfs, start_ticks
+    wfs = accumulate_signals(wfs, signals, pix_renumbering, start_ticks - earliest_tick)
+    # return signals, pix_renumbering, wfs, start_ticks, unique_pixels
     integral, ticks = get_adc_values(params, wfs)
     adcs = digitize(params, integral)
     # return wfs, unique_pixels
-    return adcs, unique_pixels
+    return adcs, unique_pixels, ticks
 
-def params_loss(params, ref, pixels_ref, tracks, fields):
-    adcs, pixels = simulate(params, tracks, fields)
-    return loss(adcs, pixels, ref, pixels_ref, fields)
+def params_loss(params, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0):
+    adcs, pixels, ticks = simulate(params, tracks, fields, rngkey)
+    return loss(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields)
 
 def update_params(params, params_init, grads, to_propagate, lr):
     modified_values = {}
@@ -184,7 +201,8 @@ def update_params(params, params_init, grads, to_propagate, lr):
 
 def prepare_tracks(params, tracks_file):
     
-    tracks, fields = load_data(tracks_file)
+    tracks, dtype = load_data(tracks_file)
+    fields = dtype.names
 
     tracks = set_pixel_plane(params, tracks, fields)
     original_tracks = tracks.copy()
@@ -260,7 +278,7 @@ def load_params() -> Params:
     "eField": 0.50,
     "Ab": 0.8,
     "kb": 0.0486,
-    "vdrift": 0.1648 ,
+    "vdrift": 0.1648,
     "lifetime": 2.2e3,
     "long_diff": 4.0e-6,
     "tran_diff": 8.8e-6,

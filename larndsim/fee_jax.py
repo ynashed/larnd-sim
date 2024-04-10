@@ -43,6 +43,7 @@ def get_adc_values(params, pixels_signals):
     """
 
     #Baseline level of noise on integrated charge
+    #TODO: Deal better with the rng
     key = random.PRNGKey(42)
     q_sum_base = random.normal(key, (pixels_signals.shape[0],)) * params.RESET_NOISE_CHARGE * params.e_charge
 
@@ -64,7 +65,8 @@ def get_adc_values(params, pixels_signals):
         # Then linearly interpolate for the intersection point.
         m = (q_sum[idx_pix, idx_t]-q_sum[idx_pix, (idx_t-1)])
         b = q_sum[idx_pix, idx_t]-m*idx_t
-        idx_val = (params.DISCRIMINATION_THRESHOLD - b)/m
+        eps = 1e-3
+        idx_val = jnp.where(m < eps*params.DISCRIMINATION_THRESHOLD, 0, (params.DISCRIMINATION_THRESHOLD - b)/(m + eps*params.DISCRIMINATION_THRESHOLD))
 
         ic = jnp.zeros((q_sum.shape[0],))
         ic = ic.at[idx_pix].set(idx_val)
@@ -107,7 +109,7 @@ def get_adc_values(params, pixels_signals):
         q_sum = q_sum_base[:, jnp.newaxis] + q_cumsum
         
 
-        return (key, q_sum, q_cumsum), adc
+        return (key, q_sum, q_cumsum), (adc, ic)
 
         # Get ticks
         # adc_ticks_list = (time_ticks.max()-time_ticks.min())/time_ticks.shape[0]*ic + time_padding
@@ -121,12 +123,17 @@ def get_adc_values(params, pixels_signals):
 
     init_loop = (random.split(key, 1)[0], q_sum, q_cumsum)
     
-    _, full_adc = lax.scan(find_hit, init_loop, jnp.arange(0, params.MAX_ADC_VALUES))
+    _, (full_adc, full_ticks) = lax.scan(find_hit, init_loop, jnp.arange(0, params.MAX_ADC_VALUES))
+
+    #Single iteration to detect NaNs
+    # _, (full_adc, full_ticks) = find_hit(init_loop, 0)
+    # full_adc = jnp.repeat(full_adc[:, jnp.newaxis], params.MAX_ADC_VALUES, axis=1)
+    # full_ticks = jnp.repeat(full_ticks[:, jnp.newaxis], params.MAX_ADC_VALUES, axis=1)
     
     # full_adc_ticks_list = jnp.stack(full_adc_ticks_list, axis=1)
-    full_adc_ticks_list = None
 
-    return full_adc.T, full_adc_ticks_list
+    return full_adc.T, full_ticks.T
+    # return full_adc, full_ticks
 
 
 # class fee(consts):

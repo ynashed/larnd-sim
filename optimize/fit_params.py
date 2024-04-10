@@ -6,9 +6,14 @@ import pickle
 import numpy as np
 from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
-from larndsim.sim_with_grad import sim_with_grad
+from larndsim.sim_jax import simulate, params_loss
+from larndsim.consts_jax import build_params_class, load_detector_properties
 import logging
 import torch
+import optax
+import jax
+import jax.numpy as jnp
+from jax import value_and_grad
 
 from tqdm import tqdm
 
@@ -36,21 +41,27 @@ def normalize_param(param_val, param_name, scheme="divide", undo_norm=False):
         return param_val
     else:
         raise ValueError(f"No normalization method called {scheme}")
+    
+def extract_relevant_params(params, relevant):
+    return {par: getattr(params, par) for par in relevant}
+
+def update_params(params, update):
+    return params.replace(**{key: getattr(params, key) + val for key, val in update.items()})
 
 class ParamFitter:
     def __init__(self, relevant_params, track_fields, track_chunk, pixel_chunk,
                  detector_props, pixel_layouts, load_checkpoint = None,
                  lr=None, optimizer=None, lr_scheduler=None, lr_kw=None, 
                  loss_fn=None, readout_noise_target=True, readout_noise_guess=False, 
-                 out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
+                 out_label="", norm_scheme="divide", max_clip_norm_val=None, optimizer_fn="Adam",
+                #  fit_diffs=False,
                  no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None, skip_pixels = False,
                  set_target_vals=[], vary_init=False, seed_init=30,
                  config = {}):
-
         if optimizer_fn == "Adam":
-            self.optimizer_fn = torch.optim.Adam
+            self.optimizer_fn = optax.adam
         elif optimizer_fn == "SGD":
-            self.optimizer_fn = torch.optim.SGD
+            self.optimizer_fn = optax.sgd
         else:
             raise NotImplementedError("Only SGD and Adam supported")
         self.optimizer_fn_name = optimizer_fn
@@ -67,8 +78,9 @@ class ParamFitter:
         if self.max_clip_norm_val is not None:
             logger.info(f"Will clip gradient norm at {self.max_clip_norm_val}")
 
-        self.fit_diffs = fit_diffs
+        # self.fit_diffs = fit_diffs
         # If you have access to a GPU, sim works trivially/is much faster
+        #TODO: See how to change/take care of CUDA availability with JAX
         if torch.cuda.is_available():
             self.device = 'cuda'
             # torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -103,73 +115,78 @@ class ParamFitter:
 
 
         # Simulation object for target
-        self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_target, skip_pixels=self.skip_pixels)
-        self.sim_target.load_detector_properties(detector_props, pixel_layouts)
-        self.sim_target.link_vdrift_eField = link_vdrift_eField
+        # self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_target, skip_pixels=self.skip_pixels)
+        # self.sim_target.load_detector_properties(detector_props, pixel_layouts)
+        #TODO: take care of link_vdrift_eField
 
         # Simulation object for iteration -- this is where gradient updates will happen
-        self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
-        self.sim_iter.load_detector_properties(detector_props, pixel_layouts)
+        # self.sim_iter = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
+        # self.sim_iter.load_detector_properties(detector_props, pixel_layouts)
 
         # Normalize parameters to init at 1, or random, or set to checkpointed values
-        np.random.seed(seed_init)
+        
+        Params = build_params_class(self.relevant_params_list)
+        ref_params = load_detector_properties(Params, detector_props, pixel_layouts)
+
+        initial_params = {}
+
         for param in self.relevant_params_list:
             if is_continue:
-                setattr(self.sim_iter, param, normalize_param(history[param][-1], param, scheme=self.norm_scheme))
+                initial_params[param] = history[param][-1]
             else:
                 if vary_init:
                     logger.info("Running with random initial guess")
                     init_val = np.random.uniform(low=ranges[param]['down'], 
                                                   high=ranges[param]['up'])
-                    setattr(self.sim_iter, param, normalize_param(init_val, param, scheme=self.norm_scheme))
-                else:
-                    setattr(self.sim_iter, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme))
-                
-        # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
-        self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
-        self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
-        self.sim_physics.link_vdrift_eField = link_vdrift_eField
+                    initial_params[param] = init_val
 
-        for param in self.relevant_params_list:
-            setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
+        self.current_params = ref_params.replace(**initial_params)
+        self.params_normalization = ref_params.replace(**initial_params)
+        self.norm_params = ref_params.replace(**{key: 1. for key in self.relevant_params_list})
+         
+        # # Placeholder simulation -- parameters will be set by un-normalizing sim_iter
+        # self.sim_physics = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_guess, skip_pixels=self.skip_pixels)
+        # self.sim_physics.load_detector_properties(detector_props, pixel_layouts)
+
+        # for param in self.relevant_params_list:
+        #     setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
 
         # Keep track of gradients in sim_iter
-        self.sim_iter.track_gradients(self.relevant_params_list, fit_diffs=self.fit_diffs)
+        # self.sim_iter.track_gradients(self.relevant_params_list, fit_diffs=self.fit_diffs)
 
-
-        # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
-        lr_dict = {}
-        if optimizer is None:
-            if self.relevant_params_dict is None:
-                if lr is None:
-                    raise ValueError("Need to specify lr for params")
-                else:
-                    if self.fit_diffs:
-                        self.optimizer = self.optimizer_fn([getattr(self.sim_iter, param+"_diff") for param in self.relevant_params_list], lr=lr)
-                    else:
-                        self.optimizer = self.optimizer_fn([getattr(self.sim_iter, param) for param in self.relevant_params_list], lr=lr)
-                    for param in self.relevant_params_list:
-                        lr_dict[param] = lr
-            else:
-                param_config_list = []
-                for param in self.relevant_params_dict.keys():
-                    if self.fit_diffs:
-                        param_config_list.append({'params': [getattr(self.sim_iter, param+"_diff")], 'lr' : float(self.relevant_params_dict[param])})
-                    else:
-                        param_config_list.append({'params': [getattr(self.sim_iter, param)], 'lr' : float(self.relevant_params_dict[param])})
-                    lr_dict[param] = float(self.relevant_params_dict[param])
-                self.optimizer = self.optimizer_fn(param_config_list)
-
-        else:
-            self.optimizer = optimizer
+        self.learning_rates = {}
+        #TODO: Only step the learning rate at each epoch!!!
 
         if lr_scheduler is not None and lr_kw is not None:
-            lr_scheduler_fn = getattr(torch.optim.lr_scheduler, lr_scheduler)
-            self.lr_scheduler = lr_scheduler_fn(self.optimizer, **lr_kw)
+            lr_scheduler_fn = getattr(optax, lr_scheduler)
             logger.info(f"Using learning rate scheduler {lr_scheduler}")
         else:
-            self.lr_scheduler = None
+            lr_scheduler_fn = optax.constant_schedule
+            lr_kw = {}
 
+        if self.relevant_params_dict is None:
+            if lr is None:
+                raise ValueError("Need to specify lr for params")
+            else:
+                self.learning_rates = {par: lr_scheduler_fn(lr, **lr_kw) for par in self.relevant_params_list}
+        else:
+            self.learning_rates = {key: lr_scheduler_fn(float(value), **lr_kw) for key, value in self.relevant_params_dict.items()}
+        
+        # Set up optimizer -- can pass in directly, or construct as SGD from relevant params and/or lr
+
+        if optimizer is None:
+            self.optimizer = optax.chain(
+                optax.clip(0.1),
+                optax.multi_transform({key: self.optimizer_fn(value) for key, value in self.learning_rates.items()},
+                            {key: key for key in self.relevant_params_list})
+            )
+        else:
+            raise ValueError("Passing directly optimizer is not supported")
+            # self.optimizer = optimizer
+        
+        self.opt_state = self.optimizer.init(extract_relevant_params(self.norm_params, self.relevant_params_list))
+
+        #TODO: Modify this part
         # Set up loss function -- can pass in directly, or choose a named one
         if loss_fn is None or loss_fn == "space_match":
             self.loss_fn = calc_loss
@@ -209,22 +226,32 @@ class ParamFitter:
                 self.training_history[param+"_iter"] = []
 
                 self.training_history[param + '_target'] = []
-                self.training_history[param + '_init'] = [normalize_param(getattr(self.sim_iter, param).item(), param, scheme=self.norm_scheme, undo_norm=True)]
-                self.training_history[param + '_lr'] = [lr_dict[param]]
+                self.training_history[param + '_init'] = [getattr(self.current_params, param)]
+                # self.training_history[param + '_lr'] = [lr_dict[param]]
             for param in self.shift_no_fit:
                 self.training_history[param + '_target'] = []
 
             self.training_history['losses'] = []
             self.training_history['losses_iter'] = []
             self.training_history['norm_scheme'] = self.norm_scheme
-            self.training_history['fit_diffs'] = self.fit_diffs
+        #     self.training_history['fit_diffs'] = self.fit_diffs
             self.training_history['optimizer_fn_name'] = self.optimizer_fn_name
 
         self.training_history['config'] = config
 
+    def clip_values(self, mini=0.01, maxi=100):
+        cur_norm_values = extract_relevant_params(self.norm_params, self.relevant_params_list)
+        cur_norm_values = {key: max(mini, min(maxi, val)) for key, val in cur_norm_values.items()}
+        self.norm_params = self.norm_params.replace(**cur_norm_values)
+
+    def update_params(self):
+        self.current_params = self.norm_params.replace(**{key: getattr(self.norm_params, key)*getattr(self.params_normalization, key) for key in self.relevant_params_list})
+
     def make_target_sim(self, seed=2, fixed_range=None):
         np.random.seed(seed)
         logger.info("Constructing target param simulation")
+
+        self.target_params = {}
 
         if self.target_val_dict is not None:
             if set(self.relevant_params_list + self.shift_no_fit) != set(self.target_val_dict.keys()):
@@ -235,8 +262,8 @@ class ParamFitter:
             logger.info("Explicitly setting targets:")
             for param in self.target_val_dict.keys():
                 param_val = self.target_val_dict[param]
-                logger.info(f'{param}, target: {param_val}, init {getattr(self.sim_physics, param)}')    
-                setattr(self.sim_target, param, param_val)
+                logger.info(f'{param}, target: {param_val}, init {getattr(self.current_params, param)}')    
+                self.target_params[param] = param_val
         else:
             for param in self.relevant_params_list + self.shift_no_fit:
                 if fixed_range is not None:
@@ -246,17 +273,9 @@ class ParamFitter:
                     param_val = np.random.uniform(low=ranges[param]['down'], 
                                                 high=ranges[param]['up'])
 
-                logger.info(f'{param}, target: {param_val}, init {getattr(self.sim_physics, param)}')    
-                setattr(self.sim_target, param, param_val)
-
-
-    def optimize_batch_memory(self, sim, tracks) -> None:
-        if self.batch_memory is not None:
-            estimated_memory = sim.estimate_peak_memory(tracks, self.track_fields)
-            chunk_size = int(self.batch_memory // estimated_memory)
-            chunk_size = max(1, chunk_size) #Min value should be 1
-            logger.info(f"Initial maximum memory of {estimated_memory/1024:.2f}Gio. Setting pixel_chunk_size to {chunk_size} and expect a maximum memory of {chunk_size*estimated_memory/1024:.2f}Gio")
-            sim.update_chunk_sizes(1, chunk_size)
+                logger.info(f'{param}, target: {param_val}, init {getattr(self.current_params, param)}')    
+                self.target_params[param] = param_val
+        self.target_params = self.current_params.replace(**self.target_params)
 
     
     def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
@@ -277,13 +296,13 @@ class ParamFitter:
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
             if len(self.training_history[param]) == 0:
-                self.training_history[param].append(getattr(self.sim_physics, param))
-                self.training_history[param+'_target'].append(getattr(self.sim_target, param))
+                self.training_history[param].append(getattr(self.current_params, param))
+                self.training_history[param+'_target'].append(getattr(self.target_params, param))
             if len(self.training_history[param+"_iter"]) == 0:
-                self.training_history[param+"_iter"].append(getattr(self.sim_physics, param))
+                self.training_history[param+"_iter"].append(getattr(self.current_params, param))
         for param in self.shift_no_fit:
             if len(self.training_history[param+'_target']) == 0:
-                self.training_history[param+'_target'].append(getattr(self.sim_target, param))
+                self.training_history[param+'_target'].append(getattr(self.target_params, param))
 
         if iterations is not None:
             pbar_total = iterations
@@ -298,122 +317,97 @@ class ParamFitter:
                 losses_batch=[]
                 for i, selected_tracks_bt_torch in enumerate(dataloader):
                     # Zero gradients
-                    self.optimizer.zero_grad()
+                    # self.optimizer.zero_grad()
 
                     # Get rid of the extra dimension and padding elements for the loaded data
+                    # selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
+                    # selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
+                    # event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
+                    
+                    #Convert torch tracks to jax
                     selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
-                    selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
-                    event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
+                    selected_tracks = jax.device_put(selected_tracks_bt_torch.numpy())
 
+                    #Simulate the output for the whole batch
                     loss_ev = []
-                    # Calculate loss per event
-                    for ev in unique_eventIDs:
-                        selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
-                        selected_tracks_torch = selected_tracks_torch.to(self.device)
 
-                        if shuffle:
-                            target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                                          event_id_map, unique_eventIDs,
-                                                                          return_unique_pix=True)
-                            embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
-                        else:
-                            # Simulate target and store them
-                            if epoch == 0:
-                                #No need to store gradients for forward-only pass
-                                with torch.no_grad():
-                                    #Update chunk sizes based on memory calculations
-                                    self.optimize_batch_memory(self.sim_target, selected_tracks_torch)
+                    # selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
+                    # selected_tracks_torch = selected_tracks_torch.to(self.device)
 
-                                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                                                event_id_map, unique_eventIDs,
-                                                                                return_unique_pix=True)
-                                    embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
-
-                                torch.save(embed_target, 'target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
-
-                            else:
-                                embed_target = torch.load('target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
-
-                        # Undo normalization (sim -> sim_physics)
-                        for param in self.relevant_params_list:
-                            setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
-                            logger.debug(f"{param} {getattr(self.sim_physics, param)}")
-
-                        # Simulate and get output
-                        #Update chunk sizes based on memory calculations
-                        self.optimize_batch_memory(self.sim_physics, selected_tracks_torch)
-                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
-                                                  event_id_map, unique_eventIDs,
-                                                  return_unique_pix=True)
-
-                        # Embed both output and target into "full" image space
-                        embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
-
-                        # Calc loss between simulated and target + backprop
-                        loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
-
-                        # To be investigated -- sometimes we get nans. Avoid doing a step if so
-                        if not loss.isnan():
-                            loss_ev.append(loss)
-
-                    # Backpropagate the parameter(s) per batch
-                    if len(loss_ev) > 0:
-                        loss_ev_mean = torch.mean(torch.stack(loss_ev))
-                        loss_ev_mean.backward()
-                        if self.fit_diffs:
-                            nan_check = torch.tensor([getattr(self.sim_iter, param+"_diff").grad.isnan() for param in self.relevant_params_list]).sum()
-                        else:
-                            nan_check = torch.tensor([getattr(self.sim_iter, param).grad.isnan() for param in self.relevant_params_list]).sum()
-                        if nan_check == 0:
-                            for param in self.relevant_params_list:
-                                if self.fit_diffs:
-                                    self.training_history[param+"_grad"].append(getattr(self.sim_iter, param+"_diff").grad.item())
-                                else:
-                                    self.training_history[param+"_grad"].append(getattr(self.sim_iter, param).grad.item())
-                            if self.max_clip_norm_val is not None:
-                                if self.fit_diffs:
-                                    torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param+"_diff") for param in self.relevant_params_list],
-                                                               self.max_clip_norm_val)
-                                else:
-                                    torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param) for param in self.relevant_params_list],
-                                                               self.max_clip_norm_val)
-                            self.optimizer.step()
-                            losses_batch.append(loss_ev_mean.item())
-                            self.training_history['losses_iter'].append(loss_ev_mean.item())
-                            for param in self.relevant_params_list:
-                                self.training_history[param+"_iter"].append(normalize_param(getattr(self.sim_iter, param).item(), 
-                                                                                            param, scheme=self.norm_scheme, undo_norm=True))
-
-                        else:
-                            if len(self.training_history['losses_iter']) > 0:
-                                self.training_history['losses_iter'].append(self.training_history['losses_iter'][-1])
-                                for param in self.relevant_params_list:
-                                    self.training_history[param+"_iter"].append(self.training_history[param+"_iter"][-1])
-                                    self.training_history[param+"_grad"].append(self.training_history[param+"_grad"][-1])
-                            else:
-                                self.training_history['losses_iter'].append(0.)
-                                for param in self.relevant_params_list:
-                                    self.training_history[param+"_iter"].append(self.training_history[param+"_init"][0])
-                                    self.training_history[param+"_grad"].append(0.)
-
-                            logger.warning(f"Got {nan_check} gradients with a NaN value!")
-
+                    #Simulating the reference during the first epoch
+                    fname = 'target_' + self.out_label + '/batch' + str(i) + '_target.npz'
+                    if epoch == 0:
+                        ref_adcs, ref_unique_pixels, ref_ticks = simulate(self.target_params, selected_tracks, self.track_fields)
+                        # embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+                        #Saving the target for the batch
+                        #TODO: See if we have to do this for each event
+                        
+                        with open(fname, 'wb') as f:
+                            jnp.savez(f, adcs=ref_adcs, unique_pixels=ref_unique_pixels, ticks=ref_ticks)
                     else:
-                        if len(self.training_history['losses_iter']) > 0:
-                            self.training_history['losses_iter'].append(self.training_history['losses_iter'][-1])
-                            for param in self.relevant_params_list:
-                                self.training_history[param+"_iter"].append(self.training_history[param+"_iter"][-1])
-                                self.training_history[param+"_grad"].append(self.training_history[param+"_grad"][-1])
-                        else:
-                            self.training_history['losses_iter'].append(0.)
-                            for param in self.relevant_params_list:
-                                self.training_history[param+"_iter"].append(self.training_history[param+"_init"][0])
-                                self.training_history[param+"_grad"].append(0.)
+                        #Loading the target
+                        with open(fname, 'rb') as f:
+                            loaded = jnp.load(f)
+                            ref_adcs = loaded['adcs']
+                            ref_unique_pixels = loaded['unique_pixels']
+                            ref_ticks = loaded['ticks']
+
+                    # Simulate and get output
+                    (loss_val, aux), grads = value_and_grad(params_loss, (0), has_aux = True)(self.current_params, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0)
+
+                    print(f"Loss: {loss_val} ; ADC loss: {aux['adc_loss']} ; Time loss: {aux['time_loss']}")
+
+                    updates, self.opt_state = self.optimizer.update(extract_relevant_params(grads, self.relevant_params_list), self.opt_state)
+                    self.current_params = update_params(self.norm_params, updates)
+                    self.norm_params = update_params(self.norm_params, updates)
+                    self.clip_values()
+                    self.update_params()
+
+
+                    for param in self.relevant_params_list:
+                        self.training_history[param+"_grad"].append(getattr(grads, param))
+                    #TODO: Add norm clipping in the optimizer
+                    # if self.max_clip_norm_val is not None:
+                    #     if self.fit_diffs:
+                    #         torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param+"_diff") for param in self.relevant_params_list],
+                    #                                     self.max_clip_norm_val)
+                    #     else:
+                    #         torch.nn.utils.clip_grad_norm_([getattr(self.sim_iter, param) for param in self.relevant_params_list],
+                    #                                     self.max_clip_norm_val)
+                    self.training_history['losses_iter'].append(loss_val)
+                    for param in self.relevant_params_list:
+                        self.training_history[param+"_iter"].append(getattr(self.current_params, param))
+
+                    #     else:
+                    #         if len(self.training_history['losses_iter']) > 0:
+                    #             self.training_history['losses_iter'].append(self.training_history['losses_iter'][-1])
+                    #             for param in self.relevant_params_list:
+                    #                 self.training_history[param+"_iter"].append(self.training_history[param+"_iter"][-1])
+                    #                 self.training_history[param+"_grad"].append(self.training_history[param+"_grad"][-1])
+                    #         else:
+                    #             self.training_history['losses_iter'].append(0.)
+                    #             for param in self.relevant_params_list:
+                    #                 self.training_history[param+"_iter"].append(self.training_history[param+"_init"][0])
+                    #                 self.training_history[param+"_grad"].append(0.)
+
+                    #         logger.warning(f"Got {nan_check} gradients with a NaN value!")
+
+                    # else:
+                    #     if len(self.training_history['losses_iter']) > 0:
+                    #         self.training_history['losses_iter'].append(self.training_history['losses_iter'][-1])
+                    #         for param in self.relevant_params_list:
+                    #             self.training_history[param+"_iter"].append(self.training_history[param+"_iter"][-1])
+                    #             self.training_history[param+"_grad"].append(self.training_history[param+"_grad"][-1])
+                    #     else:
+                    #         self.training_history['losses_iter'].append(0.)
+                    #         for param in self.relevant_params_list:
+                    #             self.training_history[param+"_iter"].append(self.training_history[param+"_init"][0])
+                    #             self.training_history[param+"_grad"].append(0.)
 
                     if iterations is not None:
                         if total_iter % print_freq == 0:
                             for param in self.relevant_params_list:
-                                logger.info(f"{param} {getattr(self.sim_physics,param).item()}")
+                                logger.info(f"{param} {getattr(self.current_params,param)} {getattr(grads, param)} {updates[param]}")
                             
                         if total_iter % save_freq == 0:
                             with open(f'fit_result/history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
@@ -429,33 +423,30 @@ class ParamFitter:
                         if total_iter >= iterations:
                             break
 
-                if self.lr_scheduler is not None:
-                    self.lr_scheduler.step()
+        #         # Print out params at each epoch
+        #         if epoch % print_freq == 0 and iterations is None:
+        #             for param in self.relevant_params_list:
+        #                 logger.info(f"{param} {getattr(self.sim_physics,param).item()}")
 
-                # Print out params at each epoch
-                if epoch % print_freq == 0 and iterations is None:
-                    for param in self.relevant_params_list:
-                        logger.info(f"{param} {getattr(self.sim_physics,param).item()}")
+        #         # Keep track of training history
+        #         for param in self.relevant_params_list:
+        #             self.training_history[param].append(normalize_param(getattr(self.sim_iter, param).item(), param, scheme=self.norm_scheme, undo_norm=True))
+        #         if len(losses_batch) > 0:
+        #             self.training_history['losses'].append(np.mean(losses_batch))
 
-                # Keep track of training history
-                for param in self.relevant_params_list:
-                    self.training_history[param].append(normalize_param(getattr(self.sim_iter, param).item(), param, scheme=self.norm_scheme, undo_norm=True))
-                if len(losses_batch) > 0:
-                    self.training_history['losses'].append(np.mean(losses_batch))
+        #         # Save history in pkl files
+        #         n_steps = len(self.training_history[param])
+        #         if n_steps % save_freq == 0 and iterations is None:
+        #             with open(f'fit_result/history_{param}_epoch{n_steps}_{self.out_label}.pkl', "wb") as f_history:
+        #                 pickle.dump(self.training_history, f_history)
+        #             if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
+        #                 os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl') 
 
-                # Save history in pkl files
-                n_steps = len(self.training_history[param])
-                if n_steps % save_freq == 0 and iterations is None:
-                    with open(f'fit_result/history_{param}_epoch{n_steps}_{self.out_label}.pkl', "wb") as f_history:
-                        pickle.dump(self.training_history, f_history)
-                    if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
-                        os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl') 
-
-        if iterations is None:
-            with open(f'fit_result/history_{param}_{self.out_label}.pkl', "wb") as f_history:
-                pickle.dump(self.training_history, f_history)
-                if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
-                    os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl')
+        # if iterations is None:
+        #     with open(f'fit_result/history_{param}_{self.out_label}.pkl', "wb") as f_history:
+        #         pickle.dump(self.training_history, f_history)
+        #         if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
+        #             os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl')
 
     def loss_scan_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
 

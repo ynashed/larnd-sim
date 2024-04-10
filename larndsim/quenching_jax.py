@@ -4,10 +4,8 @@ through the detector
 """
 
 import jax.numpy as jnp
-from jax import grad, jit, vmap, debug
+from jax import jit
 from functools import partial
-
-from .consts_ep import consts
 
 import logging
 
