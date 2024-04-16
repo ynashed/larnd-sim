@@ -16,7 +16,55 @@ def torch_from_structured(tracks):
 def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
+def chop_tracks(tracks, fields, precision=0.001):
+    def split_track(track, nsteps, length, direction, i):
+        new_tracks = track.reshape(1, track.shape[0]).repeat(nsteps, axis=0)
 
+        new_tracks[:, fields.index("dE")] = new_tracks[:, fields.index("dE")]*precision/(length+1e-10)
+        steps = np.arange(0, nsteps)
+
+        new_tracks[:, fields.index("x_start")] = track[fields.index("x_start")] + steps*precision*direction[0]
+        new_tracks[:, fields.index("y_start")] = track[fields.index("y_start")] + steps*precision*direction[1]
+        new_tracks[:, fields.index("z_start")] = track[fields.index("z_start")] + steps*precision*direction[2]
+
+        new_tracks[:, fields.index("x_end")] = track[fields.index("x_start")] + precision*(steps + 1)*direction[0]
+        new_tracks[:, fields.index("y_end")] = track[fields.index("y_start")] + precision*(steps + 1)*direction[1]
+        new_tracks[:, fields.index("z_end")] = track[fields.index("z_start")] + precision*(steps + 1)*direction[2]
+        new_tracks[:, fields.index("dx")] = precision
+
+        #Correcting the last track bit
+        new_tracks[-1, fields.index("x_end")] = track[fields.index("x_end")]
+        new_tracks[-1, fields.index("y_end")] = track[fields.index("y_end")]
+        new_tracks[-1, fields.index("z_end")] = track[fields.index("z_end")]
+        new_tracks[-1, fields.index("dE")] = track[fields.index("dE")]*(1 - precision*(nsteps - 1)/(length + 1e-10))
+        new_tracks[-1, fields.index("dx")] = length - precision*(nsteps - 1)
+
+        #Finally computing the middle point once everything is ok
+        new_tracks[:, fields.index("x")] = 0.5*(new_tracks[:, fields.index("x_start")] + new_tracks[:, fields.index("x_end")])
+        new_tracks[:, fields.index("y")] = 0.5*(new_tracks[:, fields.index("y_start")] + new_tracks[:, fields.index("y_end")])
+        new_tracks[:, fields.index("z")] = 0.5*(new_tracks[:, fields.index("z_start")] + new_tracks[:, fields.index("z_end")])
+
+        # orig_track = np.full((new_tracks.shape[0], 1), i)
+        # new_tracks = np.hstack([new_tracks, orig_track])
+        return new_tracks
+    
+    tracks = tracks.numpy()
+    
+    start = np.stack([tracks[:, fields.index("x_start")],
+                        tracks[:, fields.index("y_start")],
+                        tracks[:, fields.index("z_start")]], axis=1)
+    end = np.stack([tracks[:, fields.index("x_end")],
+                    tracks[:, fields.index("y_end")],
+                    tracks[:, fields.index("z_end")]], axis=1)
+
+    segment = end - start
+    length = np.sqrt(np.sum(segment**2, axis=1, keepdims=True))
+    eps = 1e-10
+    direction = segment / (length + eps)
+    nsteps = np.maximum(np.ceil(length / precision), 1).astype(int).flatten()
+    # step_size = length/nsteps
+    new_tracks = np.vstack([split_track(tracks[i], nsteps[i], length[i], direction[i], i) for i in range(tracks.shape[0])])
+    return new_tracks
 
 class TracksDataset(Dataset):
     def __init__(self, filename, ntrack, max_nbatch=None, swap_xz=True, seed=3, random_ntrack=False, track_len_sel=2., 
@@ -128,13 +176,12 @@ class TracksDataset(Dataset):
                 batches.append(torch.stack(batch_here))
                 tot_data_length += tot_length
             
-            fit_tracks = batches
-
+            fit_tracks = [torch.tensor(chop_tracks(batch, self.track_fields)) for batch in batches]
             logger.info(f"-- The used data includes a total track length of {tot_data_length} cm.")
             logger.info(f"-- The maximum batch track length is {max_batch_len} cm.")
             logger.info(f"-- There are {len(batches)} different batches in total.")
 
-        self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = -99) 
+        self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = 0) 
 
     def __len__(self):
         return len(self.tracks)
