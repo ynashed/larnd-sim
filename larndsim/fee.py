@@ -33,9 +33,13 @@ V_PEDESTAL = 580
 #: Number of ADC counts
 ADC_COUNTS = 2**8
 #: Reset noise in e-
-RESET_NOISE_CHARGE = 900
+# RESET_NOISE_CHARGE = 900
+# #: Uncorrelated noise in e-
+# UNCORRELATED_NOISE_CHARGE = 500
+
+RESET_NOISE_CHARGE = 0
 #: Uncorrelated noise in e-
-UNCORRELATED_NOISE_CHARGE = 500
+UNCORRELATED_NOISE_CHARGE = 0
 
 nonrouted_channels=[6,7,8,9,22,23,24,25,38,39,40,54,55,56,57]
 routed_channels=[i for i in range(64) if i not in nonrouted_channels]
