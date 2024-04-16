@@ -5,6 +5,7 @@ import numpy as np
 from numpy.lib import recfunctions as rfn
 from flax import struct
 from functools import partial
+import logging
 
 from larndsim.consts_jax import consts
 from larndsim.detsim_jax import generate_electrons, get_pixels, id2pixel, accumulate_signals, current_mc
@@ -12,6 +13,11 @@ from larndsim.quenching_jax import quench
 from larndsim.drifting_jax import drift
 from larndsim.pixels_from_track_jax import get_pixel_coordinates
 from larndsim.fee_jax import get_adc_values, digitize
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+size_history = []
 
 def jax_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)
@@ -132,8 +138,9 @@ def order_tracks_by_z(tracks, fields):
 
 def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
     # return jnp.sqrt(jnp.sum((tracks[:, fields.index("n_electrons")] - tracks_ref[:, fields.index("n_electrons")])**2))
-    
-    unique_pixels = jnp.sort(jnp.unique(jnp.concatenate([pIDs, pIDs_ref])))
+    all_pixels = jnp.concatenate([pIDs, pIDs_ref])
+    padded_size = pad_size(jnp.unique(all_pixels).shape[0])
+    unique_pixels = jnp.sort(jnp.unique(all_pixels, size=padded_size, fill_value=-1))
     nb_pixels = unique_pixels.shape[0]
     pix_renumbering = jnp.searchsorted(unique_pixels, pIDs)
 
@@ -160,6 +167,25 @@ def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
 
     return adc_loss + time_loss, aux
 
+def pad_size(cur_size):
+    global size_history
+    pad_threshold = 0.05
+    #If an input with this shape has already been used, we are fine
+    if cur_size in size_history:
+        logger.debug(f"Input size {cur_size} already existing.")
+        return cur_size
+    #Otherwise we want to see if there is something available not too far
+    for size in size_history:
+        if cur_size <= size <= cur_size*(1 + pad_threshold):
+            logger.debug(f"Input size {cur_size} not existing. Using close size of {size}")
+            return size
+    #If nothing exists we will have to recompile. We still use some padding to try limiting further recompilations if the size is reduced
+    new_size = int(cur_size*(1 + pad_threshold/2) + 0.5)
+    size_history.append(new_size)
+    size_history.sort()
+    logger.debug(f"Input size {cur_size} not existing. Creating new size of {new_size}")
+    return new_size
+
 def simulate(params, tracks, fields, rngkey = 0):
     new_tracks = quench(params, tracks, 2, fields)
     new_tracks = drift(params, new_tracks, fields)
@@ -170,9 +196,9 @@ def simulate(params, tracks, fields, rngkey = 0):
     
     pixels_coord = get_pixel_coordinates(params, xpitch, ypitch, plane)
     t0, signals = current_mc(params, electrons, pixels_coord, fields)
-    unique_pixels = jnp.sort(jnp.unique(pIDs))
+    padded_size = pad_size(jnp.unique(pIDs).shape[0])
+    unique_pixels = jnp.sort(jnp.unique(pIDs, size=padded_size, fill_value=-1))
     npixels = unique_pixels.shape[0]
-
     pix_renumbering = jnp.searchsorted(unique_pixels, pIDs)
 
     nticks_wf = int(params.time_window/params.t_sampling)
