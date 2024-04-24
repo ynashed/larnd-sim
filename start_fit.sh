@@ -13,11 +13,11 @@ UUID=$(uuidgen)
 PARAMS="param_list_lr.yaml"
 
 
-# JAX_LOG_COMPILES=1
+# export JAX_LOG_COMPILES=1
 python3 -m optimize.example_run \
     --print_input \
     --data_sz -1 \
-    --max_nbatch 10 \
+    --max_nbatch 40 \
     --params ${PARAMS} \
     --input_file ${INPUT_FILE} \
     --track_len_sel 2 \
@@ -29,7 +29,6 @@ python3 -m optimize.example_run \
     --out_label seed${TARGET_SEED}_tdiff-vdrift_ds${DATA_SEED}_adam_SDTW_lr1e-2_5trk_test_${UUID} \
     --seed ${TARGET_SEED} \
     --optimizer_fn Adam \
-    --loss_fn SDTW \
     --random_ntrack \
     --iterations ${ITERATIONS} \
     --max_batch_len ${BATCH_SIZE} \
@@ -39,4 +38,7 @@ python3 -m optimize.example_run \
     --lr_scheduler exponential_decay \
     --lr_kw '{"decay_rate" : 0.996, "transition_steps": 10}' \
     --track_z_bound 28 \
-    --max_clip_norm_val 1
+    --max_clip_norm_val 1 \
+    --loss_fn SDTW
+    # --profile_gradient 
+    # --loss_fn space_match

@@ -240,10 +240,11 @@ class SoftDTW(CostFn):
       two_ago, one_ago = carry
 
       diagonal, right, down = two_ago[:-1], one_ago[:-1], one_ago[1:]
+      # jax.debug.print("{diagonal}, {right}, {down}", diagonal=diagonal, right=right, down=down)
       best = -self.gamma * jsp.special.logsumexp(jnp.stack([diagonal, right, down], axis=-1) / -self.gamma, axis=-1)
 
       next_row = best + current_antidiagonal
-      next_row = jnp.pad(next_row, (1, 0), constant_values=jnp.inf)
+      next_row = jnp.pad(next_row, (1, 0), constant_values=1e10)
 
       return (one_ago, next_row), next_row
 
@@ -256,21 +257,23 @@ class SoftDTW(CostFn):
       dist = dist.T
       n, m = m, n
 
-    model_matrix = jnp.full((n + m - 1, n), fill_value=jnp.inf)
+    model_matrix = jnp.full((n + m - 1, n), fill_value=1e10)
     mask = np.tri(n + m - 1, n, k=0, dtype=bool)
     mask = mask & mask[::-1, ::-1]
     model_matrix = model_matrix.T.at[mask.T].set(dist.ravel()).T
 
     init = (
-        jnp.pad(model_matrix[0], (1, 0), constant_values=jnp.inf),
+        jnp.pad(model_matrix[0], (1, 0), constant_values=1e10),
         jnp.pad(
             model_matrix[1] + model_matrix[0, 0], (1, 0),
-            constant_values=jnp.inf
+            constant_values=1e10
         )
     )
 
     (_, carry), _ = jax.lax.scan(body, init, model_matrix[2:])
+    # (_, carry), _ = body(init, model_matrix[0])
     return carry[-1]
+    # return carry
 
   def tree_flatten(self):  # noqa: D102
     return (self.gamma, self.ground_cost), {"debiased": self.debiased}

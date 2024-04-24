@@ -13,6 +13,7 @@ from larndsim.quenching_jax import quench
 from larndsim.drifting_jax import drift
 from larndsim.pixels_from_track_jax import get_pixel_coordinates
 from larndsim.fee_jax import get_adc_values, digitize
+from larndsim.softdtw_jax import SoftDTW
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -154,11 +155,11 @@ def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
 
     # Add some penalty term for the time information also
 
-    # signals = jnp.zeros((nb_pixels, adcs.shape[1]))
-    # signals = accumulate_signals(signals, ticks, pix_renumbering, jnp.zeros_like(pix_renumbering))
-    # signals = accumulate_signals(signals, -ticks_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
-    # time_loss = jnp.sum(signals**2)
-    time_loss = 0
+    signals = jnp.zeros((nb_pixels, adcs.shape[1]))
+    signals = accumulate_signals(signals, ticks, pix_renumbering, jnp.zeros_like(pix_renumbering))
+    signals = accumulate_signals(signals, -ticks_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
+    time_loss = jnp.sum(signals**2)
+    # time_loss = 0
 
     aux = {
         'adc_loss': adc_loss,
@@ -215,9 +216,26 @@ def simulate(params, tracks, fields, rngkey = 0):
     # return wfs, unique_pixels
     return adcs, unique_pixels, ticks
 
-def params_loss(params, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0):
+#TODO: Finish this thing
+def calc_sdtw(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **kwargs):
+    dstw = SoftDTW(**kwargs)
+
+    sorted_adcs = adcs[jnp.argsort(pixels)]
+    sorted_ref = ref[jnp.argsort(pixels_ref)]
+    adc_loss = dstw.pairwise(sorted_adcs, sorted_ref)
+    # adc_loss = adc_loss/len(sorted_adcs)/len(sorted_ref)
+    time_loss = 0
+    loss = adc_loss + time_loss
+    aux = {
+        'adc_loss': adc_loss,
+        'time_loss': time_loss
+    }
+
+    return loss, aux
+
+def params_loss(params, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
     adcs, pixels, ticks = simulate(params, tracks, fields, rngkey)
-    return loss(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields)
+    return loss_fn(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **loss_kwargs)
 
 def update_params(params, params_init, grads, to_propagate, lr):
     modified_values = {}

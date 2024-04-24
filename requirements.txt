@@ -1,9 +1,7 @@
-eagerpy
 numpy
 numba
-pytest
-sphinx-rtd-theme
+h5py
 tqdm
-fire
-larpix-control
-larpix-geometry
+jax[cpu]
+optax
+flax

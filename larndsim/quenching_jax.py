@@ -14,18 +14,15 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 logger.info("QUENCHING MODULE PARAMETERS")
 
-@jit
 def box_model(dEdx, eField, lArDensity, alpha, beta):
     # Baller, 2013 JINST 8 P08005
     csi = beta * dEdx / (eField * lArDensity)
     return jnp.maximum(0, jnp.log(alpha + csi) / csi)
 
-@jit
 def birks_model(dEdx, eField, lArDensity, Ab, kb):
     # Amoruso, et al NIM A 523 (2004) 275
     return Ab / (1 + kb * dEdx / (eField * lArDensity))
 
-@jit
 def get_nelectrons(dE, recomb, MeVToElectrons):
     return recomb * dE * MeVToElectrons
 
