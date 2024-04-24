@@ -32,6 +32,7 @@ def make_param_list(config):
 
 def main(config):
     jax.config.update('jax_platform_name', 'cpu')
+    jax.config.update("jax_debug_nans", False)
     if config.print_input:
         logger.info(f"fit label: {config.out_label}")
 
@@ -71,12 +72,15 @@ def main(config):
                             no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit,
                             link_vdrift_eField=config.link_vdrift_eField, batch_memory=config.batch_memory, skip_pixels=config.skip_pixels,
                             set_target_vals=config.set_target_vals, vary_init=config.vary_init, seed_init=config.seed_init,
-                            config = config)
+                            config = config, profile_gradient=config.profile_gradient)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
+
+    # jax.profiler.start_trace("/tmp/tensorboard")
 
     # with cProfile.Profile() as pr:
     param_fit.fit(tracks_dataloader, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
     # pr.dump_stats('prof.prof')
+    # jax.profiler.stop_trace()
     return 0, 'Fitting successful'
 
 if __name__ == '__main__':
@@ -174,6 +178,8 @@ if __name__ == '__main__':
                         help="Optimize the pixel chunk size to reach the specified GPU memory per batch, in MiB")
     parser.add_argument("--skip_pixels", dest="skip_pixels", default=False, action="store_true",
                         help="Iterating only over the pixels of each track (no cartesian product of all pixels x all tracks)")
+    parser.add_argument("--profile_gradient", dest="profile_gradient", default=False, action="store_true",
+                        help="To profile the gradient and loss instead of making an actual fit.")
 
     try:
         args = parser.parse_args()

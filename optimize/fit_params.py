@@ -6,7 +6,7 @@ import pickle
 import numpy as np
 from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
 from .ranges import ranges
-from larndsim.sim_jax import simulate, params_loss
+from larndsim.sim_jax import simulate, params_loss, calc_sdtw, loss
 from larndsim.consts_jax import build_params_class, load_detector_properties
 import logging
 import torch
@@ -18,7 +18,7 @@ from jax import value_and_grad
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 def normalize_param(param_val, param_name, scheme="divide", undo_norm=False):
     if scheme == "divide":
@@ -56,7 +56,7 @@ class ParamFitter:
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, optimizer_fn="Adam",
                 #  fit_diffs=False,
                  no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None, skip_pixels = False,
-                 set_target_vals=[], vary_init=False, seed_init=30,
+                 set_target_vals=[], vary_init=False, seed_init=30, profile_gradient = False,
                  config = {}):
         if optimizer_fn == "Adam":
             self.optimizer_fn = optax.adam
@@ -77,6 +77,8 @@ class ParamFitter:
         self.max_clip_norm_val = max_clip_norm_val
         if self.max_clip_norm_val is not None:
             logger.info(f"Will clip gradient norm at {self.max_clip_norm_val}")
+
+        self.profile_gradient = profile_gradient
 
         # self.fit_diffs = fit_diffs
         # If you have access to a GPU, sim works trivially/is much faster
@@ -111,8 +113,6 @@ class ParamFitter:
                 param_name = set_target_vals[2*i_val]
                 param_val = set_target_vals[2*i_val+1]
                 self.target_val_dict[param_name] = float(param_val)
-
-
 
         # Simulation object for target
         # self.sim_target = sim_with_grad(track_chunk=track_chunk, pixel_chunk=pixel_chunk, readout_noise=readout_noise_target, skip_pixels=self.skip_pixels)
@@ -189,28 +189,15 @@ class ParamFitter:
         #TODO: Modify this part
         # Set up loss function -- can pass in directly, or choose a named one
         if loss_fn is None or loss_fn == "space_match":
-            self.loss_fn = calc_loss
-            self.loss_fn_kw = { 
-                                'sim': self.sim_physics, 
-                                'return_components' : False,
-                                'no_adc' : self.no_adc 
-                              }
+            self.loss_fn = loss
+            self.loss_fn_kw = { }
             logger.info("Using space match loss")
         elif loss_fn == "SDTW":
-            self.loss_fn = calc_soft_dtw_loss
-
-            t_only = self.no_adc
-            adc_only = not t_only
+            self.loss_fn = calc_sdtw
 
             self.loss_fn_kw = {
-                                'adc_only' : adc_only,
-                                't_only' : t_only,
                                 'gamma' : 1
                               }
-            if t_only:
-                logger.info("Using Soft DTW loss on t only")
-            else:
-                logger.info("Using Soft DTW loss on ADC only")
         else:
             self.loss_fn = loss_fn
             self.loss_fn_kw = {}
@@ -309,12 +296,37 @@ class ParamFitter:
         else:
             pbar_total = len(dataloader) * epochs
 
+        if self.profile_gradient:
+            logger.info("Using the fitter in a gradient profile mode. The sampling will follow a regular grid.")
+            nb_var_params = len(self.relevant_params_list)
+            logger.info(f"{nb_var_params} parameters are to be scanned.")
+            nb_steps = int(epochs**(1./nb_var_params))
+            logger.info(f"Each parameter will be scanned with {nb_steps} steps")
+            grids_1d = [list(range(nb_steps))]*nb_var_params
+            steps_grids = np.meshgrid(*grids_1d)
+
+            for i, param in enumerate(self.relevant_params_list):
+                lower = ranges[param]['down']
+                upper = ranges[param]['up']
+                param_step = (upper - lower)/(nb_steps - 1)
+                steps_grids[i] = steps_grids[i].astype(float)
+                steps_grids[i] *= param_step
+                steps_grids[i] += lower
+                steps_grids[i] = steps_grids[i].ravel()
+
         # The training loop
         total_iter = 0
         with tqdm(total=pbar_total) as pbar:
             for epoch in range(epochs):
                 # Losses for each batch -- used to compute epoch loss
                 losses_batch=[]
+
+                if self.profile_gradient:
+                    new_param_values = {}
+                    for i, param in enumerate(self.relevant_params_list):
+                        new_param_values[param] = steps_grids[i][epoch]
+                    logger.info(f"Stepping parameter values: {new_param_values}")
+                    self.current_params = self.current_params.replace(**new_param_values)
                 for i, selected_tracks_bt_torch in enumerate(dataloader):
                     # Zero gradients
                     # self.optimizer.zero_grad()
@@ -353,15 +365,20 @@ class ParamFitter:
                             ref_ticks = loaded['ticks']
 
                     # Simulate and get output
-                    (loss_val, aux), grads = value_and_grad(params_loss, (0), has_aux = True)(self.current_params, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0)
+                    # loss_val, aux = params_loss(self.current_params, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0, loss_fn=self.loss_fn, **self.loss_fn_kw)
+                    # grads, aux = jax.grad(params_loss, (0), has_aux = True)(self.current_params, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0, loss_fn=self.loss_fn, **self.loss_fn_kw)
+                    
+                    (loss_val, aux), grads = value_and_grad(params_loss, (0), has_aux = True)(self.current_params, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0, loss_fn=self.loss_fn, **self.loss_fn_kw)
 
                     print(f"Loss: {loss_val} ; ADC loss: {aux['adc_loss']} ; Time loss: {aux['time_loss']}")
 
-                    updates, self.opt_state = self.optimizer.update(extract_relevant_params(grads, self.relevant_params_list), self.opt_state)
-                    self.current_params = update_params(self.norm_params, updates)
-                    self.norm_params = update_params(self.norm_params, updates)
-                    self.clip_values()
-                    self.update_params()
+                    if not self.profile_gradient:
+                        updates, self.opt_state = self.optimizer.update(extract_relevant_params(grads, self.relevant_params_list), self.opt_state)
+                        self.current_params = update_params(self.norm_params, updates)
+                        self.norm_params = update_params(self.norm_params, updates)
+                        #Clipping param values
+                        self.clip_values()
+                        self.update_params()
 
 
                     for param in self.relevant_params_list:
@@ -407,7 +424,8 @@ class ParamFitter:
                     if iterations is not None:
                         if total_iter % print_freq == 0:
                             for param in self.relevant_params_list:
-                                logger.info(f"{param} {getattr(self.current_params,param)} {getattr(grads, param)} {updates[param]}")
+                                # logger.info(f"{param} {getattr(self.current_params,param)} {getattr(grads, param)} {updates[param]}")
+                                logger.info(f"{param} {getattr(self.current_params,param)} {getattr(grads, param)}")
                             
                         if total_iter % save_freq == 0:
                             with open(f'fit_result/history_{param}_iter{total_iter}_{self.out_label}.pkl', "wb") as f_history:
