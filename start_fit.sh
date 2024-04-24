@@ -1,11 +1,25 @@
+#!/bin/bash
+
+#SBATCH --partition=milano
+#SBATCH --account=neutrino
+#
+#SBATCH --job-name=larndsim
+#SBATCH --output=job-%j.out
+#SBATCH --error=job-%j.err
+#
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=8g
+#
+#SBATCH --time=3:00:00
+
 #BASE DECLARATIONS
 TARGET_SEED=2
 # PARAMS="tran_diff long_diff Ab kb lifetime"
 BATCH_SIZE=200
-ITERATIONS=2500
+ITERATIONS=250
 DATA_SEED=1
-INPUT_FILE=/home/pgranger/larnd-sim/jit_version/larnd-sim/data/muon/edepsim-output.h5
-# INPUT_FILE=/home/pgranger/larnd-sim/jit_version/larnd-sim/examples/module0_corsika.h5
+INPUT_FILE=/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5
 UUID=$(uuidgen)
 #DECLARATIONS
 
@@ -14,7 +28,7 @@ PARAMS="param_list_lr.yaml"
 
 
 # JAX_LOG_COMPILES=1
-python3 -m optimize.example_run \
+singularity exec --bind /sdf,$SCRATCH python-jax.sif python3 -m optimize.example_run \
     --print_input \
     --data_sz -1 \
     --max_nbatch 10 \
