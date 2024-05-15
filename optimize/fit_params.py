@@ -15,6 +15,53 @@ import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+dEdx_hist = np.array([4.64037123e-04, 0.00000000e+00, 0.00000000e+00, 9.94365264e-05,
+       3.31455088e-05, 3.31455088e-05, 6.62910176e-05, 1.32582035e-04,
+       1.98873053e-04, 2.98309579e-04, 5.96619158e-04, 9.61219755e-04,
+       1.45840239e-03, 4.11004309e-03, 9.77792509e-03, 2.64169705e-02,
+       5.32316871e-02, 1.17169374e-01, 1.95127610e-01, 1.69240968e-01,
+       1.03612860e-01, 6.43354325e-02, 4.58070931e-02, 3.09579052e-02,
+       2.43950945e-02, 1.94232681e-02, 1.40868412e-02, 1.25290023e-02,
+       1.05402718e-02, 8.58468677e-03, 7.52403049e-03, 5.43586344e-03,
+       5.66788200e-03, 3.71229698e-03, 3.81173351e-03, 3.11567783e-03,
+       2.85051376e-03, 2.18760358e-03, 2.18760358e-03, 1.82300298e-03,
+       1.45840239e-03, 1.22638382e-03, 1.25952933e-03, 1.06065628e-03,
+       9.61219755e-04, 9.28074246e-04, 1.19323832e-03, 6.62910176e-04,
+       9.28074246e-04, 6.29764667e-04, 7.62346702e-04, 7.29201193e-04,
+       4.97182632e-04, 6.29764667e-04, 5.96619158e-04, 5.96619158e-04,
+       5.63473649e-04, 6.29764667e-04, 5.30328141e-04, 5.63473649e-04,
+       4.97182632e-04, 3.97746105e-04, 5.96619158e-04, 5.96619158e-04,
+       7.95492211e-04, 8.28637720e-04, 6.62910176e-04, 7.62346702e-04,
+       6.96055684e-04, 3.64600597e-04, 6.96055684e-04, 8.28637720e-04,
+       6.29764667e-04, 7.29201193e-04, 8.94928737e-04, 5.63473649e-04,
+       7.95492211e-04, 1.06065628e-03, 7.95492211e-04, 6.62910176e-04,
+       6.29764667e-04, 7.62346702e-04, 8.61783228e-04, 9.61219755e-04,
+       1.39211137e-03, 9.94365264e-04, 8.28637720e-04, 1.06065628e-03,
+       7.95492211e-04, 9.61219755e-04, 1.02751077e-03, 8.94928737e-04,
+       5.63473649e-04, 1.06065628e-03, 8.94928737e-04, 9.28074246e-04,
+       8.61783228e-04, 9.28074246e-04, 7.95492211e-04, 5.30328141e-04])
+
+dEdx_bins = np.array([0.05      , 0.15      , 0.25000001, 0.35000001, 0.45      ,
+       0.55000001, 0.65000001, 0.75      , 0.84999999, 0.94999999,
+       1.05000001, 1.15000004, 1.25      , 1.34999996, 1.44999999,
+       1.55000001, 1.65000004, 1.75      , 1.84999996, 1.94999999,
+       2.04999995, 2.14999998, 2.25      , 2.35000002, 2.45000005,
+       2.54999995, 2.64999998, 2.75      , 2.85000002, 2.95000005,
+       3.04999995, 3.14999998, 3.25      , 3.35000002, 3.45000005,
+       3.54999995, 3.64999998, 3.75      , 3.85000002, 3.95000005,
+       4.04999995, 4.14999986, 4.25      , 4.35000014, 4.45000005,
+       4.54999995, 4.64999986, 4.75      , 4.85000014, 4.95000005,
+       5.04999995, 5.14999986, 5.25      , 5.35000014, 5.45000005,
+       5.54999995, 5.64999986, 5.75      , 5.85000014, 5.95000005,
+       6.04999995, 6.14999986, 6.25      , 6.35000014, 6.45000005,
+       6.54999995, 6.64999986, 6.75      , 6.85000014, 6.95000005,
+       7.04999995, 7.14999986, 7.25      , 7.35000014, 7.45000005,
+       7.54999995, 7.64999986, 7.75      , 7.85000014, 7.95000005,
+       8.05000019, 8.1500001 , 8.25      , 8.3499999 , 8.44999981,
+       8.55000019, 8.6500001 , 8.75      , 8.8499999 , 8.94999981,
+       9.05000019, 9.1500001 , 9.25      , 9.3499999 , 9.44999981,
+       9.55000019, 9.6500001 , 9.75      , 9.8499999 , 9.94999981])
+
 def normalize_param(param_val, param_name, scheme="divide", undo_norm=False):
     if scheme == "divide":
         if undo_norm:
@@ -277,6 +324,11 @@ class ParamFitter:
         if not os.path.exists('fit_result'):
             os.makedirs('fit_result')
 
+        # make a folder for the drawn dEdx distribution
+        if os.path.exists('dEdx_rand_' + self.out_label):
+            shutil.rmtree('dEdx_rand_' + self.out_label, ignore_errors=True)
+        os.makedirs('dEdx_rand_' + self.out_label)
+
         # Include initial value in training history (if haven't loaded a checkpoint)
         for param in self.relevant_params_list:
             if len(self.training_history[param]) == 0:
@@ -311,14 +363,27 @@ class ParamFitter:
                     loss_ev = []
                     # Calculate loss per event
                     for ev in unique_eventIDs:
+                        if ev == 345:
+                            continue
                         selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
 
                         # flatten the dEdx and dE for the iteration input
-                        selected_tracks_torch_target = selected_tracks_torch
-                        selected_tracks_torch_output = selected_tracks_torch
 
-                        selected_tracks_torch_output[:, self.track_fields.index('dEdx')] = 2
-                        selected_tracks_torch_output[:, self.track_fields.index('dE')] = 2 * selected_tracks_torch_output[:, self.track_fields.index('dx')]
+                        selected_tracks_torch_target = selected_tracks_torch.detach().clone()
+                        selected_tracks_torch_output = selected_tracks_torch.detach().clone()
+
+                        if not shuffle: # currently not supported to run on shuffle option
+                            if epoch == 0:
+                                #this_dEdx = torch.from_numpy(np.random.choice(dEdx_bins,len(selected_tracks_torch_output),p=dEdx_hist))  #[0]
+                                this_dEdx = torch.from_numpy(np.random.normal(8, 1, len(selected_tracks_torch_output)))
+                                selected_tracks_torch_output[:, self.track_fields.index('dEdx')] = this_dEdx
+                                selected_tracks_torch_output[:, self.track_fields.index('dE')] = this_dEdx * selected_tracks_torch_output[:, self.track_fields.index('dx')]
+                                torch.save(this_dEdx, 'dEdx_rand_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_output_dEdx.pt')
+                            else:
+                                this_dEdx = torch.load('dEdx_rand_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_output_dEdx.pt')
+                                selected_tracks_torch_output[:, self.track_fields.index('dEdx')] = this_dEdx
+                                selected_tracks_torch_output[:, self.track_fields.index('dE')] = this_dEdx * selected_tracks_torch_output[:, self.track_fields.index('dx')]
+
 
                         selected_tracks_torch_target = selected_tracks_torch_target.to(self.device)
                         selected_tracks_torch_output = selected_tracks_torch_output.to(self.device)
