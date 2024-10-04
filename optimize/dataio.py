@@ -5,6 +5,7 @@ from torch.utils.data import Dataset
 from numpy.lib import recfunctions as rfn
 import random
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -16,50 +17,63 @@ def torch_from_structured(tracks):
 def structured_from_torch(tracks_torch, dtype):
     return rfn.unstructured_to_structured(tracks_torch.cpu().numpy(), dtype=dtype)
 
-
-
 class TracksDataset(Dataset):
-    def __init__(self, filename, ntrack, max_nbatch=None, swap_xz=True, seed=3, random_ntrack=False, track_len_sel=2., 
-                 max_abs_costheta_sel=0.966, min_abs_segz_sel=15., track_z_bound=28., max_batch_len=None, print_input=False):
+    def __init__(self, filename, ntrack, max_nbatch=None, swap_xz=True, seed=3, random_ntrack=False, 
+                 track_len_sel=2.,max_abs_costheta_sel=0.966, min_abs_segz_sel=15., track_z_bound=28., max_batch_len=None, 
+                 print_input=False, preload=False):
+        
+        if not preload: 
+            # load file and cut data per usual
+            with h5py.File(filename, 'r') as f:
+                tracks = np.array(f['segments'])
 
-        with h5py.File(filename, 'r') as f:
-            tracks = np.array(f['segments'])
+            if swap_xz:
+                x_start = np.copy(tracks['x_start'] )
+                x_end = np.copy(tracks['x_end'])
+                x = np.copy(tracks['x'])
 
-        if swap_xz:
-            x_start = np.copy(tracks['x_start'] )
-            x_end = np.copy(tracks['x_end'])
-            x = np.copy(tracks['x'])
+                tracks['x_start'] = np.copy(tracks['z_start'])
+                tracks['x_end'] = np.copy(tracks['z_end'])
+                tracks['x'] = np.copy(tracks['z'])
 
-            tracks['x_start'] = np.copy(tracks['z_start'])
-            tracks['x_end'] = np.copy(tracks['z_end'])
-            tracks['x'] = np.copy(tracks['z'])
+                tracks['z_start'] = x_start
+                tracks['z_end'] = x_end
+                tracks['z'] = x
 
-            tracks['z_start'] = x_start
-            tracks['z_end'] = x_end
-            tracks['z'] = x
-
+            # flat index for all reasonable track [eventID, trackID] 
+            index = []
+            all_tracks = []
+            for ev in np.unique(tracks['eventID']):
+                track_set = np.unique(tracks[tracks['eventID'] == ev]['trackID'])
+                for trk in track_set:
+                    trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
+                    xd = tracks[trk_msk]['x_start'][0] - tracks[trk_msk]['x_end'][-1]
+                    yd = tracks[trk_msk]['y_start'][0] - tracks[trk_msk]['y_end'][-1]
+                    zd = tracks[trk_msk]['z_start'][0] - tracks[trk_msk]['z_end'][-1]
+                    z_dir = [0,0,1]
+                    trk_dir = [xd, yd, zd]
+                    # selection criteria: track length, track direction not in z, max z comp not too high-->
+                    #                     now select only segments in track that arent nuclei and above min z
+                    #TODO once we enter the end game, this track selection requirement needs to be more accessible.
+                        # For now, we keep it as it is to take consistent data among developers
+                    if np.sum(tracks[trk_msk]['dx']) > track_len_sel:
+                        cos_theta = abs(np.dot(trk_dir, z_dir))/ np.linalg.norm(trk_dir)
+                        if max(abs(tracks[trk_msk]['z'])) < track_z_bound and abs(cos_theta) < max_abs_costheta_sel:
+                            msk = np.logical_and(abs(tracks[trk_msk]['z']) > min_abs_segz_sel, tracks[trk_msk]['pdgId'] < 1e6)
+                            num_new_tracks = len(tracks[trk_msk][msk])
+                            if num_new_tracks > 0:  # continue if masked tracks are nonzero
+                                index.append([ev, trk])
+                                all_tracks.append(torch_from_structured(tracks[trk_msk][msk]))
+        
+        else: 
+            # preloaded data that has been prepared using /sdf/home/b/bkroul/larnd-sim/read_lines.py
+            # read_lines.py --f path/to/h5py_to_read.h5 --mode cut
+            with h5py.File(filename, 'r') as f:
+                tracks = np.array(f['segments'])
+                index = np.array(f['index'])
+                all_tracks = [torch.from_numpy(np.array([tracks_np])).float() for tracks_np in np.array(f['all_tracks'])]
+        
         self.track_fields = tracks.dtype.names
-
-        # flat index for all reasonable track [eventID, trackID] 
-        index = []
-        all_tracks = []
-        for ev in np.unique(tracks['eventID']):
-            track_set = np.unique(tracks[tracks['eventID'] == ev]['trackID'])
-            for trk in track_set:
-                trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
-                xd = tracks[trk_msk]['x_start'][0] - tracks[trk_msk]['x_end'][-1]
-                yd = tracks[trk_msk]['y_start'][0] - tracks[trk_msk]['y_end'][-1]
-                zd = tracks[trk_msk]['z_start'][0] - tracks[trk_msk]['z_end'][-1]
-                z_dir = [0,0,1]
-                trk_dir = [xd, yd, zd]
-                if np.sum(tracks[trk_msk]['dx']) > track_len_sel:
-                    cos_theta = abs(np.dot(trk_dir, z_dir))/ np.linalg.norm(trk_dir)
-                #TODO once we enter the end game, this track selection requirement needs to be more accessible.
-                # For now, we keep it as it is to take consistent data among developers
-                if np.sum(tracks[trk_msk]['dx']) > track_len_sel and max(abs(tracks[trk_msk]['z'])) < track_z_bound and abs(cos_theta) < max_abs_costheta_sel:
-                    index.append([ev, trk])
-                    all_tracks.append(torch_from_structured(tracks[trk_msk][abs(tracks[trk_msk]['z']) > min_abs_segz_sel]))
-
         # all fit with a sub-set of tracks
         fit_index = []
         fit_tracks = []
@@ -80,7 +94,7 @@ class TracksDataset(Dataset):
             for i_rand in list_rand:
                 fit_index.append(index[i_rand])
                 fit_tracks.append(all_tracks[i_rand])
-
+        
         if print_input:
             logger.info(f"training set [ev, trk]: {fit_index}")
       
@@ -144,4 +158,3 @@ class TracksDataset(Dataset):
         
     def get_track_fields(self):
         return self.track_fields
-
