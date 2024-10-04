@@ -2,14 +2,14 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "revert-28-revert-27-bkroul", "master" ]
     paths:
       - 'Dockerfile'
       - 'build_docker.sh'
       - 'requirements.txt'
       - '.github/workflows/docker-image.yml'
   pull_request:
-    branches: [ "master" ]
+    branches: [ "revert-28-revert-27-bkroul", "master" ]
     paths:
       - 'Dockerfile'
       - 'build_docker.sh'
