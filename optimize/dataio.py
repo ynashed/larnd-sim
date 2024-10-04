@@ -59,11 +59,11 @@ class TracksDataset(Dataset):
                     if np.sum(tracks[trk_msk]['dx']) > track_len_sel:
                         cos_theta = abs(np.dot(trk_dir, z_dir))/ np.linalg.norm(trk_dir)
                         if max(abs(tracks[trk_msk]['z'])) < track_z_bound and abs(cos_theta) < max_abs_costheta_sel:
-                            msk = np.logical_and(abs(tracks[trk_mask]['z']) > min_abs_segz_sel, tracks[trk_mask]['pdgId'] < 1e6)
-                            num_new_tracks = len(tracks[trk_mask][msk])
+                            msk = np.logical_and(abs(tracks[trk_msk]['z']) > min_abs_segz_sel, tracks[trk_msk]['pdgId'] < 1e6)
+                            num_new_tracks = len(tracks[trk_msk][msk])
                             if num_new_tracks > 0:  # continue if masked tracks are nonzero
                                 index.append([ev, trk])
-                                all_tracks.append(torch_from_structured(tracks[trk_mask][msk]))
+                                all_tracks.append(torch_from_structured(tracks[trk_msk][msk]))
         
         else: 
             # preloaded data that has been prepared using /sdf/home/b/bkroul/larnd-sim/read_lines.py
