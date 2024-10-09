@@ -175,12 +175,12 @@ def _abs_dist_func(x, y):
     y = y.unsqueeze(1).expand(-1, n, m, d)
     return torch.abs(x - y).sum(3)
 
-def calc_soft_dtw_loss(embed_out, embed_targ, adc_only=True, t_only=True, gamma=1):
+def calc_soft_dtw_loss(embed_out, embed_targ, adc_only=True, t_only=True, gamma=1, use_cuda=False):
     # Unroll embedding
     x_out_nz, y_out_nz, z_out_nz, time_list_out_nz, adc_out_nz = embed_out
     x_targ_nz, y_targ_nz, z_targ_nz, time_list_targ_nz, adc_targ_nz = embed_targ
 
-    sdtw = SoftDTW(use_cuda=False, gamma=1, dist_func = _abs_dist_func)
+    sdtw = SoftDTW(use_cuda=use_cuda, gamma=gamma, dist_func = _abs_dist_func)
 
     if adc_only:
         return sdtw(adc_out_nz[None, :, None], adc_targ_nz[None, :, None])

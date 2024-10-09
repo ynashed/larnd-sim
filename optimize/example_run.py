@@ -88,7 +88,7 @@ def main(config):
                             no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit,
                             link_vdrift_eField=config.link_vdrift_eField, batch_memory=config.batch_memory, skip_pixels=config.skip_pixels,
                             set_target_vals=config.set_target_vals, vary_init=config.vary_init, seed_init=config.seed_init,
-                            config = config)
+                            config = config, use_cuda=config.use_cuda, softdtw_gamma=config.softdtw_gamma)
     param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
     # run simulation
     param_fit.fit(tracks_dataloader_sim, tracks_dataloader_target, epochs=config.epochs, iterations=iterations, shuffle=config.data_shuffle, save_freq=config.save_freq)
@@ -181,6 +181,10 @@ if __name__ == '__main__':
                         help="Number of iterations to run. Overrides epochs.")
     parser.add_argument("--loss_fn", dest="loss_fn", default=None,
                         help="Loss function to use. Named options are SDTW and space_match.")
+    parser.add_argument("--use_cuda", dest="use_cuda", default=False, action="store_true",
+                        help="If using the cuda implementation of softdtw. Warning: may contain a minor bug")
+    parser.add_argument("--softdtw_gamma", dest="softdtw_gamma", default=1, type=float,
+                        help="Gamma of the soft DTW (loss function).")
     parser.add_argument("--max_batch_len", dest="max_batch_len", default=None, type=float,
                         help="Max dx [cm] per batch. If passed, will add tracks to batch until overflow, splitting where needed")
     parser.add_argument("--max_nbatch", dest="max_nbatch", default=None, type=int,
