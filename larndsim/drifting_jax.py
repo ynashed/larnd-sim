@@ -30,11 +30,11 @@ def drift(params, tracks, fields):
     pixel_plane = cond.astype(int).argmax(axis=-1)
     eps = 1e-6
     z_anode = lax.map(lambda i: params.tpc_borders[i][2][0], pixel_plane)
-    drift_distance = jnp.abs(tracks[:, fields.index("z")] - z_anode) - 0.5 + eps #Adding alittle something so that it is never equal to zero for grads
+    drift_distance = jnp.abs(tracks[:, fields.index("z")] - z_anode) + eps #Adding alittle something so that it is never equal to zero for grads
     drift_start = jnp.abs(jnp.minimum(tracks[:, fields.index("z_start")],
-                                    tracks[:, fields.index("z_end")]) - z_anode) - 0.5
+                                    tracks[:, fields.index("z_end")]) - z_anode)
     drift_end = jnp.abs(jnp.maximum(tracks[:, fields.index("z_start")],
-                                  tracks[:, fields.index("z_end")]) - z_anode) - 0.5
+                                  tracks[:, fields.index("z_end")]) - z_anode)
     
     tracks = tracks.at[:, fields.index("pixel_plane")].set(pixel_plane)
 
@@ -43,6 +43,7 @@ def drift(params, tracks, fields):
 
     #TODO: investigate using jnp.where instead of masking all values
     #TODO: n_electrons should be int, but truncation makes gradients vanish
+    #TODO: Here we assume track["t0"] = 0 , wrt the new larndsim code
     tracks = tracks.at[:, fields.index("n_electrons")].set(
         tracks[:, fields.index("n_electrons")] * lifetime_red * mask)
     tracks = tracks.at[:, fields.index("long_diff")].set(

@@ -84,7 +84,7 @@ def get_pixel_coordinates(params, xpitch, ypitch, plane):
     pix_x = xpitch  * params.pixel_pitch + borders[..., 0, 0] + params.pixel_pitch/2
     pix_y = ypitch * params.pixel_pitch + borders[..., 1, 0] + params.pixel_pitch/2
     # return pix_x[...,jnp.newaxis], pix_y[...,jnp.newaxis]
-    return jnp.column_stack([pix_x, pix_y])
+    return jnp.stack([pix_x, pix_y], axis=-1)
     #TODO: REALLY LOOK IN DETAILS AT THE PIXEL LAYOUT THING
 
 # @jit

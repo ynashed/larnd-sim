@@ -5,7 +5,7 @@ on the pixels
 
 import jax.numpy as jnp
 from jax.profiler import annotate_function
-from jax import jit, vmap, lax, random
+from jax import jit, vmap, lax, random, debug
 from jax.nn import sigmoid
 from functools import partial
 
@@ -16,23 +16,55 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 logger.info("DETSIM MODULE PARAMETERS")
 
-@annotate_function
-@jit
-def accumulate_signals(wfs, signals, pixID, start_ticks):
+# @annotate_function
+# @jit
+# def accumulate_signals(wfs, currents_idx, charge, response, pixID, start_ticks):
+#     # Get the number of pixels and ticks
+#     Npixels, Nticks = wfs.shape
+
+#     # Compute indices for updating wfs, taking into account start_ticks
+#     start_indices = jnp.expand_dims(pixID, axis=-1) * Nticks + start_ticks[:, jnp.newaxis, jnp.newaxis]
+#     end_indices = start_indices + jnp.arange(response.shape[-1])
+
+#     # Flatten the indices
+#     flat_indices = jnp.ravel(end_indices)
+#     print("flat_indices", flat_indices.shape)
+#     print("start_indices", start_indices.shape)
+#     print("end_indices", end_indices.shape)
+
+#     # Update wfs with accumulated signals
+#     wfs = wfs.ravel()
+#     wfs = wfs.at[(flat_indices,)].add(signals.ravel())
+#     return wfs.reshape((Npixels, Nticks))
+
+@partial(jit, static_argnames='signal_length')
+def accumulate_signals(wfs, currents_idx, charge, response, pixID, start_ticks, signal_length):
     # Get the number of pixels and ticks
     Npixels, Nticks = wfs.shape
 
     # Compute indices for updating wfs, taking into account start_ticks
-    start_indices = jnp.expand_dims(pixID, axis=1) * Nticks + start_ticks[:, jnp.newaxis]
-    end_indices = start_indices + jnp.arange(signals.shape[1])
+    start_indices = pixID * Nticks + start_ticks[:, jnp.newaxis]
+
+    end_indices = start_indices[..., None] + jnp.arange(signal_length)
 
     # Flatten the indices
     flat_indices = jnp.ravel(end_indices)
+    # print("flat_indices", flat_indices.shape)
+    # print("start_indices", start_indices.shape)
+    # print("end_indices", end_indices.shape)
+
+    Nx, Ny, Nt = response.shape
+
+    signal_indices = jnp.ravel((currents_idx[..., 0, None]*Ny + currents_idx[..., 1, None])*Nt + jnp.arange(response.shape[-1] - signal_length, response.shape[-1]))
+    # print("signal_indices", signal_indices.shape)
+
+    Np = pixID.shape[-1]
 
     # Update wfs with accumulated signals
     wfs = wfs.ravel()
-    wfs = wfs.at[(flat_indices,)].add(signals.ravel())
+    wfs = wfs.at[(flat_indices,)].add(response.take(signal_indices)*jnp.repeat(charge, Np*signal_length))
     return wfs.reshape((Npixels, Nticks))
+
 
 @annotate_function
 @jit
@@ -49,7 +81,7 @@ def pixel2id(params, pixel_x, pixel_y, pixel_plane, eventID):
         unique integer id
     """
     outside = (pixel_x >= params.n_pixels[0]) | (pixel_y >= params.n_pixels[1])
-    return jnp.where(outside, -1, pixel_x + params.n_pixels[0] * (pixel_y + params.n_pixels[1] * pixel_plane) + eventID*params.n_pixels[0]*params.n_pixels[1]*params.tpc_borders.shape[0])
+    return jnp.where(outside, -1, pixel_x + params.n_pixels[0] * (pixel_y + params.n_pixels[1] * (pixel_plane + params.tpc_borders.shape[0]*eventID)))
 
 # @annotate_function
 @jit
@@ -86,12 +118,19 @@ def generate_electrons(tracks, fields, rngkey=0):
 # @annotate_function
 @partial(jit, static_argnames=['fields'])
 def get_pixels(params, electrons, fields):
+    n_neigh = params.number_pix_neighbors
+
     borders = lax.map(lambda i: params.tpc_borders[i], electrons[:, fields.index("pixel_plane")].astype(int))
     pos = jnp.stack([(electrons[:, fields.index("x")] - borders[:, 0, 0]) // params.pixel_pitch,
             (electrons[:, fields.index("y")] - borders[:, 1, 0]) // params.pixel_pitch], axis=1)
 
     pixels = (pos + 0.5).astype(int)
-    return pixel2id(params, pixels[:, 0], pixels[:, 1], electrons[:, fields.index("pixel_plane")].astype(int), electrons[:, fields.index("eventID")].astype(int))
+
+    X, Y = jnp.mgrid[-n_neigh:n_neigh+1, -n_neigh:n_neigh+1]
+    shifts = jnp.vstack([X.ravel(), Y.ravel()]).T
+    pixels = pixels[:, jnp.newaxis, :] + shifts[jnp.newaxis, :, :]
+
+    return pixel2id(params, pixels[:, :, 0], pixels[:, :, 1], electrons[:, fields.index("pixel_plane")].astype(int)[:, jnp.newaxis], electrons[:, fields.index("eventID")].astype(int)[:, jnp.newaxis])
 
 @annotate_function
 @jit
@@ -220,21 +259,43 @@ def current_mc(params, electrons, pixels_coord, fields):
     nticks = int(5/params.t_sampling)
     ticks = jnp.linspace(0, 5, nticks).reshape((1, nticks)).repeat(electrons.shape[0], axis=0)#
 
-    x_dist = abs(electrons[:, fields.index('x')] - pixels_coord[:, 0])
-    y_dist = abs(electrons[:, fields.index('y')] - pixels_coord[:, 1])
-
+    x_dist = abs(electrons[:, fields.index('x')] - pixels_coord[..., 0])
+    y_dist = abs(electrons[:, fields.index('y')] - pixels_coord[..., 1])
     # signals = jnp.array((electrons.shape[0], ticks.shape[1]))
 
     z_anode = lax.map(lambda i: params.tpc_borders[i][2][0], electrons[:, fields.index("pixel_plane")].astype(int))
 
     #TODO: Actually write something consistent here for the time. Needs it to be >0 for now
     t0 = jnp.abs(electrons[:, fields.index('z')] - z_anode) / params.vdrift# - params.time_window
+
     # t0 = t0 - jnp.min(t0) + 5
 
     ticks = ticks + t0[:, jnp.newaxis]
 
     return t0, current_model(ticks, t0[:, jnp.newaxis], x_dist[:, jnp.newaxis], y_dist[:, jnp.newaxis])*electrons[:, fields.index("n_electrons")].reshape((electrons.shape[0], 1))*params.e_charge
 
+@partial(jit, static_argnames=['fields'])
+def current_lut(params, response, electrons, pixels_coord, fields):
+    x_dist = abs(electrons[:, fields.index('x')][..., None] - pixels_coord[..., 0])
+    y_dist = abs(electrons[:, fields.index('y')][..., None] - pixels_coord[..., 1])
+    # print("x_dist", x_dist.shape)
+    # print("pixels_coord", pixels_coord.shape)
+    z_anode = lax.map(lambda i: params.tpc_borders[i][2][0], electrons[:, fields.index("pixel_plane")].astype(int))
+    t0 = (jnp.abs(electrons[:, fields.index('z')] - z_anode) / params.vdrift + electrons[:, fields.index('z')] - params.time_padding)
+    
+    i = (x_dist/params.response_bin_size).astype(int)
+    j = (y_dist/params.response_bin_size).astype(int)
+
+
+    i = jnp.clip(i, 0, response.shape[0] - 1)
+    j = jnp.clip(j, 0, response.shape[1] - 1)
+
+    # currents = electrons[:, fields.index("n_electrons")][..., None, None]*response[i, j, :]#*params.e_charge
+    currents_idx = jnp.stack([i, j], axis=-1)#*params.e_charge
+
+    # debug.print("currents_idx -> {currents_idx}", currents_idx=currents_idx)
+
+    return t0, currents_idx
 
 @partial(jit, static_argnames=['fields'])
 def tracks_current(params, pixels, tracks, fields):

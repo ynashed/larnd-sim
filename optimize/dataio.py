@@ -68,7 +68,8 @@ def chop_tracks(tracks, fields, precision=0.001):
 
 class TracksDataset(Dataset):
     def __init__(self, filename, ntrack, max_nbatch=None, swap_xz=True, seed=3, random_ntrack=False, track_len_sel=2., 
-                 max_abs_costheta_sel=0.966, min_abs_segz_sel=15., track_z_bound=28., max_batch_len=None, print_input=False):
+                 max_abs_costheta_sel=0.966, min_abs_segz_sel=15., track_z_bound=28., max_batch_len=None, print_input=False,
+                 chopped=True, pad=True):
 
         with h5py.File(filename, 'r') as f:
             tracks = np.array(f['segments'])
@@ -176,12 +177,17 @@ class TracksDataset(Dataset):
                 batches.append(torch.stack(batch_here))
                 tot_data_length += tot_length
             
-            fit_tracks = [torch.tensor(chop_tracks(batch, self.track_fields)) for batch in batches]
+            if chopped:
+                fit_tracks = [torch.tensor(chop_tracks(batch, self.track_fields)) for batch in batches]
+            else:
+                fit_tracks = batches
             logger.info(f"-- The used data includes a total track length of {tot_data_length} cm.")
             logger.info(f"-- The maximum batch track length is {max_batch_len} cm.")
             logger.info(f"-- There are {len(batches)} different batches in total.")
-
-        self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = 0) 
+        if pad:
+            self.tracks = torch.nn.utils.rnn.pad_sequence(fit_tracks, batch_first=True, padding_value = 0)
+        else:
+            self.tracks = fit_tracks
 
     def __len__(self):
         return len(self.tracks)

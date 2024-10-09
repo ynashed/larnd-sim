@@ -51,34 +51,43 @@ def get_adc_values(params, pixels_signals):
     q = pixels_signals*params.t_sampling
 
     # Collect cumulative charge over all time ticks + add baseline noise
-    q_cumsum = q.cumsum(axis=1)
+    # q_cumsum = q.cumsum(axis=1)
+    q_cumsum = q
     q_sum = q_sum_base[:, jnp.newaxis] + q_cumsum
+    # plt.plot(q_sum[pixel0])
+    # plt.xlim(1050, 1200)
 
     def find_hit(carry, it):
         key, q_sum, q_cumsum = carry
         # Index of first threshold passing. For nice time axis differentiability: first find index window around threshold.
         selec_func = lambda x: jnp.where((x[1:] >= params.DISCRIMINATION_THRESHOLD) & 
-                    (x[:-1] <= params.DISCRIMINATION_THRESHOLD), size=1, fill_value=q_sum.shape[1]-1)
+                    (x[:-1] <= params.DISCRIMINATION_THRESHOLD), size=1, fill_value=q_sum.shape[1]-2)
         idx_t, = vmap(selec_func, 0, 0)(q_sum)
         idx_t = idx_t.ravel()
+        # debug.print("idx_t={idx_t}", idx_t=idx_t)
         idx_pix = jnp.arange(0, q_sum.shape[0])
         # Then linearly interpolate for the intersection point.
-        m = (q_sum[idx_pix, idx_t]-q_sum[idx_pix, (idx_t-1)])
-        b = q_sum[idx_pix, idx_t]-m*idx_t
-        eps = 1e-3
-        idx_val = jnp.where(m < eps*params.DISCRIMINATION_THRESHOLD, 0, (params.DISCRIMINATION_THRESHOLD - b)/(m + eps*params.DISCRIMINATION_THRESHOLD))
+        # debug.print("q_sum={q_sum}", q_sum=q_sum[idx_pix, idx_t])
+        dq = (q_sum[idx_pix, idx_t + 1]-q_sum[idx_pix, idx_t])
+        eps = 1e-7
+        idx_val = jnp.where(dq < eps*params.DISCRIMINATION_THRESHOLD, 0, idx_t + 1 - (q_sum[idx_pix, idx_t + 1] - params.DISCRIMINATION_THRESHOLD)/dq)
+        # debug.print("idx_val={idx_val}", idx_val=idx_val)
 
         ic = jnp.zeros((q_sum.shape[0],))
         ic = ic.at[idx_pix].set(idx_val)
 
         # End point of integration
         interval = round((3 * params.CLOCK_CYCLE + params.ADC_HOLD_DELAY * params.CLOCK_CYCLE) / params.t_sampling)
-        integrate_end = ic+interval
+        # integrate_end = ic+interval
 
         #Protect against ic+integrate_end past last index
+        #TODO: This is really weird. How is this thing even differentiable?
+        #TODO: Hardfixing to something reasonable, clearly not diff
+        integrate_end = idx_t + 1 + interval
         integrate_end = jnp.where(integrate_end >= q_sum.shape[1], q_sum.shape[1]-1, integrate_end)
-
-        end2d_idx = tuple(jnp.stack([jnp.arange(0, ic.shape[0]).astype(int), integrate_end.astype(int)]))
+        end2d_idx = tuple(jnp.stack([jnp.arange(0, ic.shape[0]).astype(int), integrate_end]))
+        # integrate_end = jnp.where(integrate_end >= q_sum.shape[1], q_sum.shape[1]-1, integrate_end)
+        # end2d_idx = tuple(jnp.stack([jnp.arange(0, ic.shape[0]).astype(int), integrate_end.astype(int)]))
 
         # Cumulative => value at end is desired value
         q_vals = q_sum[end2d_idx] 
@@ -104,7 +113,12 @@ def get_adc_values(params, pixels_signals):
         q_sum_base = jnp.where(cond_adc, q_adc_fail, q_adc_pass)
 
         # Remove charge already counted
-        q_cumsum = q_cumsum - q_vals_no_noise[:, jnp.newaxis]
+        #TODO: Need to add +1 to account for the weird +1 in the original code (feature or bug?)
+        # integrate_end = idx_t + 1 + interval + 1
+        # integrate_end = jnp.where(integrate_end >= q_sum.shape[1], q_sum.shape[1]-1, integrate_end)
+        # end2d_idx = tuple(jnp.stack([jnp.arange(0, ic.shape[0]).astype(int), integrate_end]))
+        # q_vals_no_noise = q_cumsum[end2d_idx]
+        q_cumsum = q_cumsum - q_vals_no_noise[..., jnp.newaxis]
         q_cumsum = jnp.where(q_cumsum < 0, 0, q_cumsum)
         q_sum = q_sum_base[:, jnp.newaxis] + q_cumsum
         
@@ -133,8 +147,6 @@ def get_adc_values(params, pixels_signals):
     # full_adc_ticks_list = jnp.stack(full_adc_ticks_list, axis=1)
 
     return full_adc.T, full_ticks.T
-    # return full_adc, full_ticks
-
 
 # class fee(consts):
 #     def __init__(self, readout_noise):

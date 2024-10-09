@@ -11,5 +11,6 @@ docs/build
 target*/
 *.yaml
 *.pkl
-*.ipynb
 *.png
+*.h5
+.history
