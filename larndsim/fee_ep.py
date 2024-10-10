@@ -104,12 +104,10 @@ class fee(consts):
             idx_pix, idx_t = torch.where((q_sum.raw[:, 1:] >= self.DISCRIMINATION_THRESHOLD) & 
                         (q_sum.raw[:, :-1] <= self.DISCRIMINATION_THRESHOLD))
             idx_pix = ep.astensor(idx_pix)
-            idx_t = ep.astensor(idx_t)
+            idx_t = ep.astensor(idx_t + 1)
   
             # Then linearly interpolate for the intersection point.
-            m = (q_sum[idx_pix, idx_t]-q_sum[idx_pix, (idx_t-1)])
-            b = q_sum[idx_pix, idx_t]-m*idx_t
-            idx_val = (self.DISCRIMINATION_THRESHOLD - b)/m
+            idx_val = idx_t - 1 + (self.DISCRIMINATION_THRESHOLD - q_sum[idx_pix, (idx_t-1)]) / (q_sum[idx_pix, idx_t]-q_sum[idx_pix, (idx_t-1)])
 
             ic = ep.zeros(idx_val, q_sum.shape[0])
             ic = ep.index_update(ic, idx_pix, idx_val)

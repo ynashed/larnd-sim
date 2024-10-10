@@ -260,11 +260,15 @@ class ParamFitter:
             sim.update_chunk_sizes(1, chunk_size)
 
     
-    def fit(self, dataloader, epochs=300, iterations=None, shuffle=False, 
+    def fit(self, dataloader_sim, dataloader_target, epochs=300, iterations=None, shuffle=False, 
             save_freq=10, print_freq=1):
+        # Log the fit label
+        print("self.out_label: ", self.out_label)
         # If explicit number of iterations, scale epochs accordingly
+        if len(dataloader_sim) != len(dataloader_target):
+            raise Exception("Sim and target inputs do not match in size. Panic.")
         if iterations is not None:
-            epochs = iterations // len(dataloader) + 1
+            epochs = iterations // len(dataloader_sim) + 1
 
         # make a folder for the pixel target
         if os.path.exists('target_' + self.out_label):
@@ -289,7 +293,7 @@ class ParamFitter:
         if iterations is not None:
             pbar_total = iterations
         else:
-            pbar_total = len(dataloader) * epochs
+            pbar_total = len(dataloader_sim) * epochs
 
         # The training loop
         total_iter = 0
@@ -297,23 +301,35 @@ class ParamFitter:
             for epoch in range(epochs):
                 # Losses for each batch -- used to compute epoch loss
                 losses_batch=[]
-                for i, selected_tracks_bt_torch in enumerate(dataloader):
+                for i, (selected_tracks_bt_torch_target, selected_tracks_bt_torch_sim) in enumerate(zip(dataloader_target, dataloader_sim)):
                     # Zero gradients
                     self.optimizer.zero_grad()
 
                     # Get rid of the extra dimension and padding elements for the loaded data
-                    selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
-                    selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
-                    event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
+                    # target
+                    selected_tracks_bt_torch_target = torch.flatten(selected_tracks_bt_torch_target, start_dim=0, end_dim=1)
+                    selected_tracks_bt_torch_target = selected_tracks_bt_torch_target[selected_tracks_bt_torch_target[:, self.track_fields.index("dx")] > 0]
+
+                    # sim
+                    selected_tracks_bt_torch_sim = torch.flatten(selected_tracks_bt_torch_sim, start_dim=0, end_dim=1)
+                    selected_tracks_bt_torch_sim = selected_tracks_bt_torch_sim[selected_tracks_bt_torch_sim[:, self.track_fields.index("dx")] > 0]
+
+                    # should be the same for target and sim at least when the segments making are the same
+                    event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch_target, self.track_fields, self.device)
 
                     loss_ev = []
                     # Calculate loss per event
                     for ev in unique_eventIDs:
-                        selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
-                        selected_tracks_torch = selected_tracks_torch.to(self.device)
+                        # target
+                        selected_tracks_torch_target = selected_tracks_bt_torch_target[selected_tracks_bt_torch_target[:, self.track_fields.index("eventID")] == ev]
+                        selected_tracks_torch_target = selected_tracks_torch_target.to(self.device)
+
+                        # sim
+                        selected_tracks_torch_sim = selected_tracks_bt_torch_sim[selected_tracks_bt_torch_sim[:, self.track_fields.index("eventID")] == ev]
+                        selected_tracks_torch_sim = selected_tracks_torch_sim.to(self.device)
 
                         if shuffle:
-                            target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                            target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch_target, self.track_fields,
                                                                           event_id_map, unique_eventIDs,
                                                                           return_unique_pix=True)
                             embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
@@ -323,9 +339,9 @@ class ParamFitter:
                                 #No need to store gradients for forward-only pass
                                 with torch.no_grad():
                                     #Update chunk sizes based on memory calculations
-                                    self.optimize_batch_memory(self.sim_target, selected_tracks_torch)
+                                    self.optimize_batch_memory(self.sim_target, selected_tracks_torch_target)
 
-                                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
+                                    target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch_target, self.track_fields,
                                                                                 event_id_map, unique_eventIDs,
                                                                                 return_unique_pix=True)
                                     embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
@@ -342,8 +358,8 @@ class ParamFitter:
 
                         # Simulate and get output
                         #Update chunk sizes based on memory calculations
-                        self.optimize_batch_memory(self.sim_physics, selected_tracks_torch)
-                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
+                        self.optimize_batch_memory(self.sim_physics, selected_tracks_torch_sim)
+                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch_sim, self.track_fields,
                                                   event_id_map, unique_eventIDs,
                                                   return_unique_pix=True)
 
