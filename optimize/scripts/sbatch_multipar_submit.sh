@@ -10,8 +10,8 @@
 #SBATCH --gpus-per-node=a100:1
 #SBATCH --mem-per-cpu=8G
 #SBATCH --cpus-per-task=1
-#SBATCH --time=72:00:00
-#SBATCH --array=1,2,3
+#SBATCH --time=144:00:00
+#SBATCH --array=1,2,3,4,5
 
 seed=$SLURM_ARRAY_TASK_ID
 seed_init=$SLURM_ARRAY_TASK_ID
