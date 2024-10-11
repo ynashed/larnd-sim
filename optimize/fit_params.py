@@ -45,7 +45,7 @@ class ParamFitter:
                  out_label="", norm_scheme="divide", max_clip_norm_val=None, fit_diffs=False, optimizer_fn="Adam", 
                  no_adc=False, shift_no_fit=[], link_vdrift_eField=False, batch_memory=None, skip_pixels = False,
                  set_target_vals=[], vary_init=False, seed_init=30,
-                 config = {}):
+                 config = {}, use_cuda = False, softdtw_gamma = 1):
 
         if optimizer_fn == "Adam":
             self.optimizer_fn = torch.optim.Adam
@@ -185,13 +185,11 @@ class ParamFitter:
             t_only = self.no_adc
             adc_only = not t_only
             # once cuda implementation in soft_dtw_cuda.py is set up
-            use_cuda = self.device == 'cuda'
-
             self.loss_fn_kw = {
                                 'use_cuda' : use_cuda,
                                 'adc_only' : adc_only,
                                 't_only' : t_only,
-                                'gamma' : 1
+                                'gamma' : softdtw_gamma
                               }
             if t_only:
                 logger.info("Using Soft DTW loss on t only")
