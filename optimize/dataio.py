@@ -20,7 +20,7 @@ def structured_from_torch(tracks_torch, dtype):
 class TracksDataset(Dataset):
     def __init__(self, filename, ntrack, max_nbatch=None, swap_xz=True, seed=3, random_ntrack=False, 
                  track_len_sel=2.,max_abs_costheta_sel=0.966, min_abs_segz_sel=15., track_z_bound=28., max_batch_len=None, 
-                 print_input=False, preload=False):
+                 dx_low_limit=1E-2, range_low_limit=None, print_input=False, preload=False):
         
         if not preload: 
             # load file and cut data per usual
@@ -46,24 +46,24 @@ class TracksDataset(Dataset):
             for ev in np.unique(tracks['eventID']):
                 track_set = np.unique(tracks[tracks['eventID'] == ev]['trackID'])
                 for trk in track_set:
-                    trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk)
-                    xd = tracks[trk_msk]['x_start'][0] - tracks[trk_msk]['x_end'][-1]
-                    yd = tracks[trk_msk]['y_start'][0] - tracks[trk_msk]['y_end'][-1]
-                    zd = tracks[trk_msk]['z_start'][0] - tracks[trk_msk]['z_end'][-1]
-                    z_dir = [0,0,1]
-                    trk_dir = [xd, yd, zd]
-                    # selection criteria: track length, track direction not in z, max z comp not too high-->
-                    #                     now select only segments in track that arent nuclei and above min z
-                    #TODO once we enter the end game, this track selection requirement needs to be more accessible.
-                        # For now, we keep it as it is to take consistent data among developers
-                    if np.sum(tracks[trk_msk]['dx']) > track_len_sel:
-                        cos_theta = abs(np.dot(trk_dir, z_dir))/ np.linalg.norm(trk_dir)
-                        if max(abs(tracks[trk_msk]['z'])) < track_z_bound and abs(cos_theta) < max_abs_costheta_sel:
-                            msk = np.logical_and(abs(tracks[trk_msk]['z']) > min_abs_segz_sel, tracks[trk_msk]['pdgId'] < 1e6)
-                            num_new_tracks = len(tracks[trk_msk][msk])
-                            if num_new_tracks > 0:  # continue if masked tracks are nonzero
+                    trk_msk = (tracks['eventID'] == ev) & (tracks['trackID'] == trk) & (tracks['dx'] > dx_low_limit)
+                    if 'range' in tracks.dtype.names and range_low_limit is not None:
+                        trk_msk = trk_msk & (tracks['range'] > range_low_limit)
+                    if np.any(trk_msk):
+                        xd = tracks[trk_msk]['x_start'][0] - tracks[trk_msk]['x_end'][-1]
+                        yd = tracks[trk_msk]['y_start'][0] - tracks[trk_msk]['y_end'][-1]
+                        zd = tracks[trk_msk]['z_start'][0] - tracks[trk_msk]['z_end'][-1]
+                        z_dir = [0,0,1]
+                        trk_dir = [xd, yd, zd]
+                        # selection criteria: track length, track direction not in z, max z comp not too high-->
+                        #                     now select only segments in track that arent nuclei and above min z
+                        #TODO once we enter the end game, this track selection requirement needs to be more accessible.
+                            # For now, we keep it as it is to take consistent data among developers
+                        if np.sum(tracks[trk_msk]['dx']) > track_len_sel:
+                            cos_theta = abs(np.dot(trk_dir, z_dir))/ np.linalg.norm(trk_dir)
+                            if max(abs(tracks[trk_msk]['z'])) < track_z_bound and abs(cos_theta) < max_abs_costheta_sel:
                                 index.append([ev, trk])
-                                all_tracks.append(torch_from_structured(tracks[trk_msk][msk]))
+                                all_tracks.append(torch_from_structured(tracks[trk_msk][abs(tracks[trk_msk]['z']) > min_abs_segz_sel]))
         
         else: 
             # preloaded data that has been prepared using /sdf/home/b/bkroul/larnd-sim/read_lines.py
