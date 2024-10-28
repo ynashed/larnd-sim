@@ -10,8 +10,6 @@ from jax.experimental import sparse
 from functools import partial
 import numpy as np
 
-from .consts_ep import consts
-
 import logging
 
 logging.basicConfig()
