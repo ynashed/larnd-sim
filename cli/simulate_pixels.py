@@ -106,6 +106,9 @@ def run_simulation(input_filename,
     TPB = 256
     BPG = ceil(tracks.shape[0] / TPB)
 
+    print(consts.tpc_borders)
+    print(tracks['z'])
+
     print("*******************\nSTARTING SIMULATION\n*******************")
     # We calculate the number of electrons after recombination (quenching module)
     # and the position and number of electrons after drifting (drifting module)
@@ -126,6 +129,7 @@ def run_simulation(input_filename,
     print(f" {end_drifting-start_drifting:.2f} s")
     step = 1
     adc_tot_list = cp.empty((0,fee.MAX_ADC_VALUES))
+    sizes = []
     adc_tot_ticks_list = cp.empty((0,fee.MAX_ADC_VALUES))
     MAX_TRACKS_PER_PIXEL = 5
     backtracked_id_tot = cp.empty((0,fee.MAX_ADC_VALUES,MAX_TRACKS_PER_PIXEL))
@@ -148,7 +152,6 @@ def run_simulation(input_filename,
         
         for itrk in range(0, evt_tracks.shape[0], 600):
             selected_tracks = evt_tracks[itrk:itrk+600]
-
             RangePush("event_id_map")
             # Here we build a map between tracks and event IDs
             event_ids = selected_tracks['eventID']
@@ -214,7 +217,7 @@ def run_simulation(input_filename,
                                                                  neighboring_pixels,
                                                                  selected_tracks)
             RangePop()
-
+            print(np.sum(signals, axis=(1, 2)))
             RangePush("pixel_index_map")
             # Here we create a map between tracks and index in the unique pixel array
             pixel_index_map = cp.full((selected_tracks.shape[0], neighboring_pixels.shape[1]), -1)
@@ -282,7 +285,7 @@ def run_simulation(input_filename,
             adc_tot_ticks_list = cp.concatenate((adc_tot_ticks_list, adc_ticks_list), axis=0)
             unique_pix_tot = cp.concatenate((unique_pix_tot, unique_pix), axis=0)
             backtracked_id_tot = cp.concatenate((backtracked_id_tot, backtracked_id), axis=0)
-        
+            sizes.append(adc_list.shape[0])
         tot_events += step
 
         end_tracks_batch = time()
@@ -294,15 +297,24 @@ def run_simulation(input_filename,
 
     RangePush("Exporting to HDF5")
     # Here we export the result in a HDF5 file.
-    fee.export_to_hdf5(cp.asnumpy(adc_tot_list),
-                       cp.asnumpy(adc_tot_ticks_list),
-                       cp.asnumpy(unique_pix_tot),
-                       cp.asnumpy(backtracked_id_tot),
-                       output_filename)
+    # fee.export_to_hdf5(cp.asnumpy(adc_tot_list),
+    #                    cp.asnumpy(adc_tot_ticks_list),
+    #                    cp.asnumpy(unique_pix_tot),
+    #                    cp.asnumpy(backtracked_id_tot),
+    #                    output_filename)
+    with h5py.File(output_filename, 'w') as f:
+        f.create_dataset('pixels', data=cp.asnumpy(unique_pix_tot))
+        f.create_dataset('tracks', data=cp.asnumpy(tracks))
+        f.create_dataset('adc', data=cp.asnumpy(adc_tot_list))
+        f.create_dataset('ticks', data=cp.asnumpy(adc_tot_ticks_list))
+        f.create_dataset('signals', data=cp.asnumpy(pixels_signals))
+        f.create_dataset('sizes', data=np.array(sizes))
+        f.create_dataset('times', data=np.array(tracks_batch_runtimes))
+
     RangePop()
 
-    with h5py.File(output_filename, 'a') as f:
-        f.create_dataset("tracks", data=tracks)
+    # with h5py.File(output_filename, 'a') as f:
+    #     f.create_dataset("tracks", data=tracks)
     
     print("Output saved in:", output_filename)
 

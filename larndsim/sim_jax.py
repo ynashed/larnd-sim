@@ -6,6 +6,7 @@ from numpy.lib import recfunctions as rfn
 from flax import struct
 from functools import partial
 import logging
+from jax.experimental import checkify
 
 # from larndsim.consts_jax import consts
 from larndsim.detsim_jax import generate_electrons, get_pixels, id2pixel, accumulate_signals, current_mc, current_lut
@@ -73,6 +74,11 @@ def chop_tracks(tracks, fields, precision=0.0001):
         new_tracks[:, fields.index("y")] = 0.5*(new_tracks[:, fields.index("y_start")] + new_tracks[:, fields.index("y_end")])
         new_tracks[:, fields.index("z")] = 0.5*(new_tracks[:, fields.index("z_start")] + new_tracks[:, fields.index("z_end")])
 
+        #TODO: This is totally WORNG!!! Just to match the reference...
+        # new_tracks[:, fields.index("x_start")] = track[fields.index("x_start")]
+        # new_tracks[:, fields.index("y_start")] = track[fields.index("y_start")]
+        # new_tracks[:, fields.index("z_start")] = track[fields.index("z_start")]
+
         # orig_track = np.full((new_tracks.shape[0], 1), i)
         # new_tracks = np.hstack([new_tracks, orig_track])
         return new_tracks
@@ -86,7 +92,6 @@ def chop_tracks(tracks, fields, precision=0.0001):
 
     segment = end - start
     length = np.sqrt(np.sum(segment**2, axis=1, keepdims=True))
-    print(segment)
     eps = 1e-10
     direction = segment / (length + eps)
     nsteps = np.maximum(np.ceil(length / precision), 1).astype(int)
@@ -138,8 +143,10 @@ def order_tracks_by_z(tracks, fields):
 
     return new_tracks
 
+
 def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
     # return jnp.sqrt(jnp.sum((tracks[:, fields.index("n_electrons")] - tracks_ref[:, fields.index("n_electrons")])**2))
+    #TODO: Put back something that is actually good here!
     all_pixels = jnp.concatenate([pIDs, pIDs_ref])
     padded_size = pad_size(jnp.unique(all_pixels).shape[0])
     unique_pixels = jnp.sort(jnp.unique(all_pixels, size=padded_size, fill_value=-1))
@@ -149,18 +156,32 @@ def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
     pix_renumbering_ref = jnp.searchsorted(unique_pixels, pIDs_ref)
 
     signals = jnp.zeros((nb_pixels, adcs.shape[1]))
-    signals = accumulate_signals(signals, adcs, pix_renumbering, jnp.zeros_like(pix_renumbering))
-    signals = accumulate_signals(signals, -adcs_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
+    signals = signals.at[pix_renumbering, :].add(adcs)
+    signals = signals.at[pix_renumbering_ref, :].add(-adcs_ref)
 
+    # signals = accumulate_signals(signals, adcs, pix_renumbering, jnp.zeros_like(pix_renumbering))
+    # indices = jnp.expand_dims(pix_renumbering, axis=1) * signals.shape[1] + jnp.arange(signals.shape[1])
+    # Flatten the indices
+    # flat_indices = jnp.ravel(indices)
+
+    # Update wfs with accumulated signals
+    # wfs = wfs.ravel()
+    # wfs = wfs.at[(flat_indices,)].add(adcs.ravel())
+    # indices = jnp.expand_dims(pix_renumbering_ref, axis=1) * signals.shape[1] + jnp.arange(signals.shape[1])
+    # flat_indices = jnp.ravel(indices)
+    # wfs = wfs.at[(flat_indices,)].add(adcs.ravel())
+
+    # signals = accumulate_signals(signals, -adcs_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
+    
     adc_loss = jnp.sum(signals**2)
 
     # Add some penalty term for the time information also
 
-    signals = jnp.zeros((nb_pixels, adcs.shape[1]))
-    signals = accumulate_signals(signals, ticks, pix_renumbering, jnp.zeros_like(pix_renumbering))
-    signals = accumulate_signals(signals, -ticks_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
-    time_loss = jnp.sum(signals**2)
-    # time_loss = 0
+    # signals = jnp.zeros((nb_pixels, adcs.shape[1]))
+    # signals = accumulate_signals(signals, ticks, pix_renumbering, jnp.zeros_like(pix_renumbering))
+    # signals = accumulate_signals(signals, -ticks_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
+    # time_loss = jnp.sum(signals**2)
+    time_loss = 0
 
     aux = {
         'adc_loss': adc_loss,
@@ -192,55 +213,58 @@ def pad_size(cur_size):
     return new_size
 
 def simulate(params, response, tracks, fields, rngkey = 0):
+    #Quenching and drifting
     new_tracks = quench(params, tracks, 2, fields)
     new_tracks = drift(params, new_tracks, fields)
-    electrons = generate_electrons(new_tracks, fields, rngkey)
-    pIDs = get_pixels(params, electrons, fields)
-    
-    xpitch, ypitch, plane, eid = id2pixel(params, pIDs)
-    
-    pixels_coord = get_pixel_coordinates(params, xpitch, ypitch, plane)
-    # print("pixels_coord ->", pixels_coord)
-    # t0, signals = current_mc(params, electrons, pixels_coord, fields)
-    t0, currents_idx = current_lut(params, response, electrons, pixels_coord, fields)
-    # print("currents_idx", currents_idx.shape)
-    # print("t0", t0.shape)
-    # print("pIDs", pIDs.shape)
-    padded_size = pad_size(jnp.unique(pIDs.ravel()).shape[0])
-    unique_pixels = jnp.sort(jnp.unique(pIDs.ravel(), size=padded_size, fill_value=-1))
-    # print("unique_pixels", unique_pixels.shape)
 
+    #Simulating the electron generation according to the diffusion coefficients
+    electrons = generate_electrons(new_tracks, fields, rngkey)
+    #Getting the pixels where the electrons are
+    pIDs = get_pixels(params, electrons, fields)
+
+    n_neigh = params.number_pix_neighbors
+    npix = (2*n_neigh + 1)**2
+    main_pixels = pIDs[:, 2*n_neigh*(n_neigh+1)] #Getting the main pixel
+    pIDs = pIDs.ravel()
+
+    #Sorting the pixels and getting the unique ones
+    padded_size = pad_size(jnp.unique(main_pixels.ravel()).shape[0])
+    unique_pixels = jnp.sort(jnp.unique(main_pixels.ravel(), size=padded_size, fill_value=-1))
+
+    #Getting the renumbering of the pixels
     npixels = unique_pixels.shape[0]
     pix_renumbering = jnp.searchsorted(unique_pixels, pIDs)
-    # print("pix_renumbering", pix_renumbering.shape)
+    #Only getting the electrons for which the pixels are in the active region
+    mask = (pix_renumbering < unique_pixels.size) & (unique_pixels[pix_renumbering] == pIDs)
+    pix_renumbering = pix_renumbering[mask]
+    elec_ids = jnp.nonzero(mask)[0]//npix #TODO: Optimize the cache size
+    electrons = electrons[elec_ids]
+
+    #Getting the pixel coordinates
+    xpitch, ypitch, plane, eid = id2pixel(params, unique_pixels[pix_renumbering])
+    pixels_coord = get_pixel_coordinates(params, xpitch, ypitch, plane)
+    #Getting the right indices for the currents
+    t0, currents_idx = current_lut(params, response, electrons, pixels_coord, fields)
 
 
-    #Making all the calculations relative to the earliest tick to only have positive values
-    start_ticks = (t0/params.t_sampling + 0.5).astype(int)
-    earliest_tick = jnp.min(start_ticks)
 
-    # jax.debug.print("ticks_diff = {tdiff}", tdiff=start_ticks - earliest_tick)
-
-    nticks_wf = int(params.time_window/params.t_sampling + jnp.max(start_ticks - earliest_tick))
+    nticks_wf = int(params.time_interval[1]/params.t_sampling) + 1 #Adding one first element to serve as a garbage collector
     wfs = jnp.zeros((npixels, nticks_wf))
-    # print("wfs", wfs.shape)
-    # jax.debug.print("nelectrons -> {nelectrons}", nelectrons=electrons[:, fields.index("n_electrons")])
-    # jax.debug.print("dE -> {dE}", dE=electrons[:, fields.index("dE")])
 
-    wfs = accumulate_signals(wfs, currents_idx, electrons[:, fields.index("n_electrons")], response, pix_renumbering, start_ticks - earliest_tick, params.signal_length)
-    # return signals, pix_renumbering, wfs, start_ticks, unique_pixels
+    start_ticks = (t0/params.t_sampling + 0.5).astype(int) - params.time_window
 
-    # last_idx = jnp.where(jnp.count_nonzero(wfs, axis=1)==0, -1, (wfs.shape[1]-1) - jnp.argmax(wfs[:,::-1]!=0, axis=1))
-    # wfs[:, last_idx:] = wfs[last_idx]
+    # errors = checkify.user_checks | checkify.index_checks | checkify.float_checks
+    # checked_f = checkify.checkify(accumulate_signals, errors=errors)
+    # err, wfs = checked_f(wfs, currents_idx, electrons[:, fields.index("n_electrons")], response, pix_renumbering, start_ticks - earliest_tick, params.signal_length)
+    # err.throw()
 
-    integral, ticks = get_adc_values(params, wfs*params.e_charge)
+    wfs = accumulate_signals(wfs, currents_idx, electrons[:, fields.index("n_electrons")], response, pix_renumbering, start_ticks, params.signal_length)
 
-    #Adding back the earliest tick value
-    ticks = ticks + earliest_tick
+    integral, ticks = get_adc_values(params, wfs[:, 1:]*params.e_charge)
 
     adcs = digitize(params, integral)
     # return wfs, unique_pixels
-    return adcs, unique_pixels, ticks, wfs, t0
+    return adcs, unique_pixels, ticks, wfs[:, 1:], t0, currents_idx, electrons, pix_renumbering, start_ticks
 
 #TODO: Finish this thing
 def calc_sdtw(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **kwargs):
@@ -259,8 +283,8 @@ def calc_sdtw(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **kwargs)
 
     return loss, aux
 
-def params_loss(params, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
-    adcs, pixels, ticks, wfs = simulate(params, tracks, fields, rngkey)
+def params_loss(params, response, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
+    adcs, pixels, ticks, wfs, _, _, _, _, _ = simulate(params, response, tracks, fields, rngkey)
     loss_val, aux = loss_fn(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **loss_kwargs)
     aux['signals'] = wfs
     return loss_val, aux
@@ -287,105 +311,3 @@ def prepare_tracks(params, tracks_file):
     # tracks = filter_tracks(tracks, fields)
 
     return tracks, fields, original_tracks
-
-# @struct.dataclass
-# class Params:
-#     eField: float
-#     Ab: float #= struct.field(pytree_node=False)
-#     kb: float = struct.field(pytree_node=False)
-#     lifetime: float 
-#     vdrift: float = struct.field(pytree_node=False)
-#     long_diff: float = struct.field(pytree_node=False)
-#     tran_diff: float = struct.field(pytree_node=False)
-#     tpc_borders: jax.Array = struct.field(pytree_node=False)
-#     box: int = struct.field(pytree_node=False)
-#     birks: int = struct.field(pytree_node=False)
-#     lArDensity: float = struct.field(pytree_node=False)
-#     alpha: float = struct.field(pytree_node=False)
-#     beta: float = struct.field(pytree_node=False)
-#     MeVToElectrons: float = struct.field(pytree_node=False)
-#     pixel_pitch: float = struct.field(pytree_node=False)
-#     n_pixels: tuple = struct.field(pytree_node=False)
-#     max_radius: int = struct.field(pytree_node=False)
-#     max_active_pixels: int = struct.field(pytree_node=False)
-#     drift_length: float = struct.field(pytree_node=False)
-#     t_sampling: float = struct.field(pytree_node=False)
-#     time_interval: float = struct.field(pytree_node=False)
-#     time_padding: float = struct.field(pytree_node=False)
-#     min_step_size: float = struct.field(pytree_node=False)
-#     time_max: float = struct.field(pytree_node=False)
-#     time_window: float = struct.field(pytree_node=False)
-#     e_charge: float = struct.field(pytree_node=False)
-#     #: Maximum number of ADC values stored per pixel
-#     MAX_ADC_VALUES: int = struct.field(pytree_node=False)
-#     #: Discrimination threshold
-#     DISCRIMINATION_THRESHOLD: float = struct.field(pytree_node=False)
-#     #: ADC hold delay in clock cycles
-#     ADC_HOLD_DELAY: int = struct.field(pytree_node=False)
-#     #: Clock cycle time in :math:`\mu s`
-#     CLOCK_CYCLE: float = struct.field(pytree_node=False)
-#     #: Front-end gain in :math:`mV/ke-`
-#     GAIN: float = struct.field(pytree_node=False)
-#     #: Common-mode voltage in :math:`mV`
-#     V_CM: float = struct.field(pytree_node=False)
-#     #: Reference voltage in :math:`mV`
-#     V_REF: float = struct.field(pytree_node=False)
-#     #: Pedestal voltage in :math:`mV`
-#     V_PEDESTAL: float = struct.field(pytree_node=False)
-#     #: Number of ADC counts
-#     ADC_COUNTS: int = struct.field(pytree_node=False)
-#     # if readout_noise:
-#         #: Reset noise in e-
-#         # self.RESET_NOISE_CHARGE = 900
-#         # #: Uncorrelated noise in e-
-#         # self.UNCORRELATED_NOISE_CHARGE = 500
-#     # else:
-#     RESET_NOISE_CHARGE: float = struct.field(pytree_node=False)
-#     UNCORRELATED_NOISE_CHARGE: float = struct.field(pytree_node=False)
-
-# def load_params() -> Params:
-#     csts = consts()
-#     csts.load_detector_properties("/home/pgranger/larnd-sim/jit_version/larnd-sim/larndsim/detector_properties/module0.yaml",
-#                                 "/home/pgranger/larnd-sim/jit_version/larnd-sim/larndsim/pixel_layouts/multi_tile_layout-2.2.16.yaml")
-#     params = {
-#     "eField": 0.50,
-#     "Ab": 0.8,
-#     "kb": 0.0486,
-#     "vdrift": 0.1648,
-#     "lifetime": 2.2e3,
-#     "long_diff": 4.0e-6,
-#     "tran_diff": 8.8e-6,
-#     "tpc_borders": jnp.asarray(csts.tpc_borders),
-#     "box": 1,
-#     "birks": 2,
-#     "lArDensity": 1.38,
-#     "alpha": 0.93,
-#     "beta": 0.207,
-#     "MeVToElectrons": 4.237e+04,
-#     "pixel_pitch": csts.pixel_pitch,
-#     "n_pixels": csts.n_pixels,
-#     "drift_length": csts.drift_length,
-#     # "t_sampling": csts.t_sampling,
-#     "t_sampling": csts.t_sampling,
-#     "time_interval": csts.time_interval,
-#     "time_padding": csts.time_padding,
-#     "max_active_pixels": 0,
-#     "max_radius": 0,
-#     "min_step_size": 0.001, #cm
-#     "time_max": 0,
-#     "time_window": 189.1, #us,
-#     "e_charge": 1.602e-19,
-#     "MAX_ADC_VALUES": 10,
-#     "DISCRIMINATION_THRESHOLD": 7e3*1.602e-19,
-#     "ADC_HOLD_DELAY": 15,
-#     "CLOCK_CYCLE": 0.1,
-#     "GAIN": 4e-3,
-#     "V_CM": 288,
-#     "V_REF": 1300,
-#     "V_PEDESTAL": 580,
-#     "ADC_COUNTS": 2**8,
-#     "RESET_NOISE_CHARGE": 0,
-#     "UNCORRELATED_NOISE_CHARGE": 0,
-#     }
-
-#     return Params(**params)

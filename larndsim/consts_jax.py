@@ -29,7 +29,9 @@ class Params_template:
     beta: float = struct.field(pytree_node=False)
     MeVToElectrons: float = struct.field(pytree_node=False)
     pixel_pitch: float = struct.field(pytree_node=False)
-    n_pixels: tuple = struct.field(pytree_node=False)
+    # n_pixels: tuple = struct.field(pytree_node=False)
+    n_pixels_x: tuple = struct.field(pytree_node=False)
+    n_pixels_y: tuple = struct.field(pytree_node=False)
     max_radius: int = struct.field(pytree_node=False)
     max_active_pixels: int = struct.field(pytree_node=False)
     drift_length: float = struct.field(pytree_node=False)
@@ -194,7 +196,10 @@ def load_detector_properties(params_cls, detprop_file, pixel_file):
             params_dict['tpc_borders'][itpc] = (x_border, y_border, z_border)
      
         #: Number of pixels per axis
-        params_dict['n_pixels'] = len(np.unique(params_dict['xs']))*2, len(np.unique(params_dict['ys']))*4
+        # params_dict['n_pixels'] = len(np.unique(params_dict['xs']))*2, len(np.unique(params_dict['ys']))*4
+        params_dict['n_pixels_x'] = len(np.unique(params_dict['xs']))*2
+        params_dict['n_pixels_y'] = len(np.unique(params_dict['ys']))*4
+
         params_dict['n_pixels_per_tile'] = len(np.unique(params_dict['xs'])), len(np.unique(params_dict['ys']))
 
         params_dict['tile_map'] = ((7,5,3,1),(8,6,4,2)),((16,14,12,10),(15,13,11,9))

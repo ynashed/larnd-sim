@@ -51,8 +51,8 @@ def get_adc_values(params, pixels_signals):
     q = pixels_signals*params.t_sampling
 
     # Collect cumulative charge over all time ticks + add baseline noise
-    # q_cumsum = q.cumsum(axis=1)
-    q_cumsum = q
+    q_cumsum = q.cumsum(axis=1)
+    # q_cumsum = q
     q_sum = q_sum_base[:, jnp.newaxis] + q_cumsum
     # plt.plot(q_sum[pixel0])
     # plt.xlim(1050, 1200)
@@ -114,10 +114,10 @@ def get_adc_values(params, pixels_signals):
 
         # Remove charge already counted
         #TODO: Need to add +1 to account for the weird +1 in the original code (feature or bug?)
-        # integrate_end = idx_t + 1 + interval + 1
-        # integrate_end = jnp.where(integrate_end >= q_sum.shape[1], q_sum.shape[1]-1, integrate_end)
-        # end2d_idx = tuple(jnp.stack([jnp.arange(0, ic.shape[0]).astype(int), integrate_end]))
-        # q_vals_no_noise = q_cumsum[end2d_idx]
+        integrate_end = idx_t + 1 + interval + 1
+        integrate_end = jnp.where(integrate_end >= q_sum.shape[1], q_sum.shape[1]-1, integrate_end)
+        end2d_idx = tuple(jnp.stack([jnp.arange(0, ic.shape[0]).astype(int), integrate_end]))
+        q_vals_no_noise = q_cumsum[end2d_idx]
         q_cumsum = q_cumsum - q_vals_no_noise[..., jnp.newaxis]
         q_cumsum = jnp.where(q_cumsum < 0, 0, q_cumsum)
         q_sum = q_sum_base[:, jnp.newaxis] + q_cumsum

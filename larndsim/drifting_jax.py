@@ -51,10 +51,10 @@ def drift(params, tracks, fields):
     tracks = tracks.at[:, fields.index("tran_diff")].set(
         jnp.sqrt((drift_time + 0.5 / params.vdrift) * 2 * params.tran_diff))
     tracks = tracks.at[:, fields.index("t")].set(
-        tracks[:, fields.index("t")] + drift_time * mask)
+        tracks[:, fields.index("t")] + drift_time * mask + tracks[:, fields.index("t0")])
     tracks = tracks.at[:, fields.index("t_start")].set(
-        tracks[:, fields.index("t_start")] + ((jnp.minimum(drift_start, drift_end) / params.vdrift) * mask))
+        tracks[:, fields.index("t_start")] + ((jnp.minimum(drift_start, drift_end) / params.vdrift) * mask) + tracks[:, fields.index("t0")])
     tracks = tracks.at[:, fields.index("t_end")].set(
-        tracks[:, fields.index("t_end")] + ((jnp.maximum(drift_start, drift_end) / params.vdrift) * mask))
+        tracks[:, fields.index("t_end")] + ((jnp.maximum(drift_start, drift_end) / params.vdrift) * mask) + tracks[:, fields.index("t0")])
 
     return tracks

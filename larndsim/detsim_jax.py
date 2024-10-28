@@ -37,18 +37,59 @@ logger.info("DETSIM MODULE PARAMETERS")
 #     wfs = wfs.at[(flat_indices,)].add(signals.ravel())
 #     return wfs.reshape((Npixels, Nticks))
 
+# @partial(jit, static_argnames='signal_length')
+# def accumulate_signals(wfs, currents_idx, charge, response, pixID, start_ticks, signal_length):
+#     #pixID: Ncurrents*Nparallel_pixels
+#     #currents_idx: (Ncurrents*Nparallel_pixels, 2)
+#     # Get the number of pixels and ticks
+#     Npixels, Nticks = wfs.shape
+
+#     # Compute indices for updating wfs, taking into account start_ticks
+#     start_indices = pixID * Nticks + start_ticks # shape (Ncurrents*Nparallel_pixels)
+    
+
+#     end_indices = start_indices[..., None] + jnp.arange(signal_length) # shape (Ncurrents*Nparallel_pixels, signal_length)
+#     debug.print("currents_idx:{currents_idx}", currents_idx=currents_idx.shape)
+
+#     # Flatten the indices
+#     flat_indices = jnp.ravel(end_indices) # shape (Ncurrents*Nparallel_pixels*signal_length)
+#     # print("flat_indices", flat_indices.shape)
+#     # print("start_indices", start_indices.shape)
+#     # print("end_indices", end_indices.shape)
+
+#     Nx, Ny, Nt = response.shape
+
+#     signal_indices = jnp.ravel((currents_idx[..., 0, None]*Ny + currents_idx[..., 1, None])*Nt + jnp.arange(response.shape[-1] - signal_length, response.shape[-1])) # shape (Ncurrents*Nparallel_pixels, signal_length)
+#     print("response.take(signal_indices)", response.take(signal_indices).shape)
+#     print("jnp.repeat(charge, signal_length)", jnp.repeat(charge, signal_length).shape)
+#     print("flat_indices", flat_indices)
+
+#     # Update wfs with accumulated signals
+#     wfs = wfs.ravel()
+#     wfs = wfs.at[(flat_indices,)].add(response.take(signal_indices)*jnp.repeat(charge, signal_length))
+
+#     return wfs.reshape((Npixels, Nticks))
+
+
 @partial(jit, static_argnames='signal_length')
 def accumulate_signals(wfs, currents_idx, charge, response, pixID, start_ticks, signal_length):
     # Get the number of pixels and ticks
     Npixels, Nticks = wfs.shape
 
     # Compute indices for updating wfs, taking into account start_ticks
-    start_indices = pixID * Nticks + start_ticks[:, jnp.newaxis]
+    time_ticks = start_ticks[..., None] + jnp.arange(signal_length)
 
-    end_indices = start_indices[..., None] + jnp.arange(signal_length)
+    time_ticks = jnp.where((time_ticks <= 0 ) | (time_ticks >= wfs.shape[1] - 1), 0, time_ticks+1) # it should be start_ticks +1 in theory but we cheat by putting the cumsum in the garbage too when strarting at 0 to mimic the expected behavior
+
+    
+    start_indices = pixID * Nticks
+
+    end_indices = start_indices[..., None] + time_ticks
 
     # Flatten the indices
     flat_indices = jnp.ravel(end_indices)
+
+    
     # print("flat_indices", flat_indices.shape)
     # print("start_indices", start_indices.shape)
     # print("end_indices", end_indices.shape)
@@ -58,11 +99,10 @@ def accumulate_signals(wfs, currents_idx, charge, response, pixID, start_ticks, 
     signal_indices = jnp.ravel((currents_idx[..., 0, None]*Ny + currents_idx[..., 1, None])*Nt + jnp.arange(response.shape[-1] - signal_length, response.shape[-1]))
     # print("signal_indices", signal_indices.shape)
 
-    Np = pixID.shape[-1]
 
     # Update wfs with accumulated signals
     wfs = wfs.ravel()
-    wfs = wfs.at[(flat_indices,)].add(response.take(signal_indices)*jnp.repeat(charge, Np*signal_length))
+    wfs = wfs.at[(flat_indices,)].add(response.take(signal_indices)*jnp.repeat(charge, signal_length))
     return wfs.reshape((Npixels, Nticks))
 
 
@@ -80,8 +120,10 @@ def pixel2id(params, pixel_x, pixel_y, pixel_plane, eventID):
     Returns:
         unique integer id
     """
-    outside = (pixel_x >= params.n_pixels[0]) | (pixel_y >= params.n_pixels[1])
-    return jnp.where(outside, -1, pixel_x + params.n_pixels[0] * (pixel_y + params.n_pixels[1] * (pixel_plane + params.tpc_borders.shape[0]*eventID)))
+    # outside = (pixel_x >= params.n_pixels[0]) | (pixel_y >= params.n_pixels[1])
+    outside = (pixel_x >= params.n_pixels_x) | (pixel_y >= params.n_pixels_y)
+    # return jnp.where(outside, -1, pixel_x + params.n_pixels[0] * (pixel_y + params.n_pixels[1] * (pixel_plane + params.tpc_borders.shape[0]*eventID)))
+    return jnp.where(outside, -1, pixel_x + params.n_pixels_x * (pixel_y + params.n_pixels_y * (pixel_plane + params.tpc_borders.shape[0]*eventID)))
 
 # @annotate_function
 @jit
@@ -96,9 +138,12 @@ def id2pixel(params, pid):
             number of pixel pitches in y-dimension,
             pixel plane number
     """
-    return (pid % params.n_pixels[0], (pid // params.n_pixels[0]) % params.n_pixels[1],
-            (pid // (params.n_pixels[0] * params.n_pixels[1])) % params.tpc_borders.shape[0],
-            pid // (params.n_pixels[0] * params.n_pixels[1]*params.tpc_borders.shape[0]))
+    # return (pid % params.n_pixels[0], (pid // params.n_pixels[0]) % params.n_pixels[1],
+    #         (pid // (params.n_pixels[0] * params.n_pixels[1])) % params.tpc_borders.shape[0],
+    #         pid // (params.n_pixels[0] * params.n_pixels[1]*params.tpc_borders.shape[0]))
+    return (pid % params.n_pixels_x, (pid // params.n_pixels_x) % params.n_pixels_y,
+            (pid // (params.n_pixels_x * params.n_pixels_y)) % params.tpc_borders.shape[0],
+            pid // (params.n_pixels_x * params.n_pixels_y*params.tpc_borders.shape[0]))
 
 # @annotate_function
 @partial(jit, static_argnames=['fields'])
@@ -130,7 +175,12 @@ def get_pixels(params, electrons, fields):
     shifts = jnp.vstack([X.ravel(), Y.ravel()]).T
     pixels = pixels[:, jnp.newaxis, :] + shifts[jnp.newaxis, :, :]
 
-    return pixel2id(params, pixels[:, :, 0], pixels[:, :, 1], electrons[:, fields.index("pixel_plane")].astype(int)[:, jnp.newaxis], electrons[:, fields.index("eventID")].astype(int)[:, jnp.newaxis])
+    # outside = (pixel_x >= params.n_pixels[0]) | (pixel_y >= params.n_pixels[1])
+    outside = (pixels[:, :, 0] >= params.n_pixels_x) | (pixels[:, :, 1] >= params.n_pixels_y)
+    # return jnp.where(outside, -1, pixel_x + params.n_pixels[0] * (pixel_y + params.n_pixels[1] * (pixel_plane + params.tpc_borders.shape[0]*eventID)))
+    return jnp.where(outside, -1, pixels[:, :, 0] + params.n_pixels_x * (pixels[:, :, 1] + params.n_pixels_y * (electrons[:, fields.index("pixel_plane")].astype(int)[:, jnp.newaxis] + params.tpc_borders.shape[0]*electrons[:, fields.index("eventID")].astype(int)[:, jnp.newaxis])))
+
+    # return pixel2id(params, pixels[:, :, 0], pixels[:, :, 1], electrons[:, fields.index("pixel_plane")].astype(int)[:, jnp.newaxis], electrons[:, fields.index("eventID")].astype(int)[:, jnp.newaxis])
 
 @annotate_function
 @jit
@@ -274,14 +324,38 @@ def current_mc(params, electrons, pixels_coord, fields):
 
     return t0, current_model(ticks, t0[:, jnp.newaxis], x_dist[:, jnp.newaxis], y_dist[:, jnp.newaxis])*electrons[:, fields.index("n_electrons")].reshape((electrons.shape[0], 1))*params.e_charge
 
+# @partial(jit, static_argnames=['fields'])
+# def current_lut(params, response, electrons, pixels_coord, fields):
+#     x_dist = abs(electrons[:, fields.index('x')] - pixels_coord[..., 0])
+#     y_dist = abs(electrons[:, fields.index('y')] - pixels_coord[..., 1])
+#     # print("x_dist", x_dist.shape)
+#     # print("pixels_coord", pixels_coord.shape)
+#     z_anode = lax.map(lambda i: params.tpc_borders[i][2][0], electrons[:, fields.index("pixel_plane")].astype(int))
+#     t0 = (jnp.abs(electrons[:, fields.index('z')] - z_anode) / params.vdrift + electrons[:, fields.index('z')] - params.time_padding)
+    
+#     i = (x_dist/params.response_bin_size).astype(int)
+#     j = (y_dist/params.response_bin_size).astype(int)
+
+
+#     i = jnp.clip(i, 0, response.shape[0] - 1)
+#     j = jnp.clip(j, 0, response.shape[1] - 1)
+
+#     # currents = electrons[:, fields.index("n_electrons")][..., None, None]*response[i, j, :]#*params.e_charge
+#     currents_idx = jnp.stack([i, j], axis=-1)#*params.e_charge
+
+#     # debug.print("currents_idx -> {currents_idx}", currents_idx=currents_idx)
+
+#     return t0, currents_idx
+
 @partial(jit, static_argnames=['fields'])
 def current_lut(params, response, electrons, pixels_coord, fields):
-    x_dist = abs(electrons[:, fields.index('x')][..., None] - pixels_coord[..., 0])
-    y_dist = abs(electrons[:, fields.index('y')][..., None] - pixels_coord[..., 1])
+    x_dist = abs(electrons[:, fields.index('x')] - pixels_coord[..., 0])
+    y_dist = abs(electrons[:, fields.index('y')] - pixels_coord[..., 1])
     # print("x_dist", x_dist.shape)
     # print("pixels_coord", pixels_coord.shape)
     z_anode = lax.map(lambda i: params.tpc_borders[i][2][0], electrons[:, fields.index("pixel_plane")].astype(int))
-    t0 = (jnp.abs(electrons[:, fields.index('z')] - z_anode) / params.vdrift + electrons[:, fields.index('z')] - params.time_padding)
+    # t0 = (jnp.abs(electrons[:, fields.index('z')] - z_anode) / params.vdrift + electrons[:, fields.index('z')] - params.time_padding)
+    t0 = jnp.abs(electrons[:, fields.index('z')] - z_anode) / params.vdrift
     
     i = (x_dist/params.response_bin_size).astype(int)
     j = (y_dist/params.response_bin_size).astype(int)
