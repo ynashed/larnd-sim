@@ -165,7 +165,7 @@ def generate_electrons(tracks, fields, rngkey=0):
 def get_pixels(params, electrons, fields):
     n_neigh = params.number_pix_neighbors
 
-    borders = lax.map(lambda i: params.tpc_borders[i], electrons[:, fields.index("pixel_plane")].astype(int))
+    borders = params.tpc_borders[electrons[:, fields.index("pixel_plane")].astype(int)]
     pos = jnp.stack([(electrons[:, fields.index("x")] - borders[:, 0, 0]) // params.pixel_pitch,
             (electrons[:, fields.index("y")] - borders[:, 1, 0]) // params.pixel_pitch], axis=1)
 
@@ -353,7 +353,7 @@ def current_lut(params, response, electrons, pixels_coord, fields):
     y_dist = abs(electrons[:, fields.index('y')] - pixels_coord[..., 1])
     # print("x_dist", x_dist.shape)
     # print("pixels_coord", pixels_coord.shape)
-    z_anode = lax.map(lambda i: params.tpc_borders[i][2][0], electrons[:, fields.index("pixel_plane")].astype(int))
+    z_anode = jnp.take(params.tpc_borders, electrons[:, fields.index("pixel_plane")].astype(int), axis=0)[..., 2, 0]
     # t0 = (jnp.abs(electrons[:, fields.index('z')] - z_anode) / params.vdrift + electrons[:, fields.index('z')] - params.time_padding)
     t0 = jnp.abs(electrons[:, fields.index('z')] - z_anode) / params.vdrift
     
@@ -435,7 +435,7 @@ def tracks_current(params, pixels, tracks, fields):
     keys = random.split(key, tracks.shape[0])
     nstep = lax.stop_gradient(jnp.squeeze(jnp.maximum(jnp.round(subsegment_length / 0.001), 1)).astype(int))
     charge = tracks[:, fields.index("n_electrons")] * jnp.squeeze(subsegment_length/length)/nstep
-    z_anode = lax.map(lambda i: params.tpc_borders[i][2][0], tracks[:, fields.index("pixel_plane")].astype(int))
+    z_anode = jnp.take(params.tpc_borders, tracks[:, fields.index("pixel_plane")].astype(int), axis=0)[..., 2, 0]
     signals = vmap(lambda *args: current_mc(params, *args))(subsegment_start, subsegment_length, t_start, pixels[:, 3], pixels[:, 4], direction, sigmas, charge, z_anode, nstep, keys)
 
     return signals

@@ -44,7 +44,7 @@ def get_active_pixels(params, tracks, fields):
             the segments
     """
 
-    borders = lax.map(lambda i: params.tpc_borders[i], tracks[:, fields.index("pixel_plane")].astype(int))
+    borders = params.tpc_borders[tracks[:, fields.index("pixel_plane")].astype(int)]
     start = jnp.stack([(tracks[:, fields.index("x_start")] - borders[:, 0, 0]) // params.pixel_pitch
             + params.n_pixels[0] * tracks[:, fields.index("pixel_plane")],
             (tracks[:, fields.index("y_start")] - borders[:, 1, 0]) // params.pixel_pitch], axis=1)
@@ -79,11 +79,10 @@ def get_pixel_coordinates(params, xpitch, ypitch, plane):
     Returns the coordinates of the pixel center given the pixel IDs
     """
 
-    borders = jnp.stack(lax.map(lambda i: params.tpc_borders[i], plane.astype(int)))
+    borders = params.tpc_borders[plane.astype(int)]
 
     pix_x = xpitch  * params.pixel_pitch + borders[..., 0, 0] + params.pixel_pitch/2
     pix_y = ypitch * params.pixel_pitch + borders[..., 1, 0] + params.pixel_pitch/2
-    # return pix_x[...,jnp.newaxis], pix_y[...,jnp.newaxis]
     return jnp.stack([pix_x, pix_y], axis=-1)
     #TODO: REALLY LOOK IN DETAILS AT THE PIXEL LAYOUT THING
 

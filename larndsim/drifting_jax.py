@@ -29,7 +29,7 @@ def drift(params, tracks, fields):
     mask = cond.sum(axis=-1) >= 1
     pixel_plane = cond.astype(int).argmax(axis=-1)
     eps = 1e-6
-    z_anode = lax.map(lambda i: params.tpc_borders[i][2][0], pixel_plane)
+    z_anode = jnp.take(params.tpc_borders, pixel_plane.astype(int), axis=0)[..., 2, 0]
     drift_distance = jnp.abs(tracks[:, fields.index("z")] - z_anode) + eps #Adding alittle something so that it is never equal to zero for grads
     drift_start = jnp.abs(jnp.minimum(tracks[:, fields.index("z_start")],
                                     tracks[:, fields.index("z_end")]) - z_anode)
