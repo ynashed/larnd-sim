@@ -1,18 +1,15 @@
 import jax.numpy as jnp
 from jax import jit, lax
-import jax
 import numpy as np
 from numpy.lib import recfunctions as rfn
-from flax import struct
 from functools import partial
 import logging
 from jax.experimental import checkify
 
 # from larndsim.consts_jax import consts
-from larndsim.detsim_jax import generate_electrons, get_pixels, id2pixel, accumulate_signals, current_mc, current_lut
+from larndsim.detsim_jax import generate_electrons, get_pixels, id2pixel, accumulate_signals, current_lut, get_pixel_coordinates
 from larndsim.quenching_jax import quench
 from larndsim.drifting_jax import drift
-from larndsim.pixels_from_track_jax import get_pixel_coordinates
 from larndsim.fee_jax import get_adc_values, digitize
 from larndsim.softdtw_jax import SoftDTW
 
@@ -74,13 +71,6 @@ def chop_tracks(tracks, fields, precision=0.0001):
         new_tracks[:, fields.index("y")] = 0.5*(new_tracks[:, fields.index("y_start")] + new_tracks[:, fields.index("y_end")])
         new_tracks[:, fields.index("z")] = 0.5*(new_tracks[:, fields.index("z_start")] + new_tracks[:, fields.index("z_end")])
 
-        #TODO: This is totally WORNG!!! Just to match the reference...
-        # new_tracks[:, fields.index("x_start")] = track[fields.index("x_start")]
-        # new_tracks[:, fields.index("y_start")] = track[fields.index("y_start")]
-        # new_tracks[:, fields.index("z_start")] = track[fields.index("z_start")]
-
-        # orig_track = np.full((new_tracks.shape[0], 1), i)
-        # new_tracks = np.hstack([new_tracks, orig_track])
         return new_tracks
     
     start = np.stack([tracks[:, fields.index("x_start")],
@@ -95,7 +85,6 @@ def chop_tracks(tracks, fields, precision=0.0001):
     eps = 1e-10
     direction = segment / (length + eps)
     nsteps = np.maximum(np.ceil(length / precision), 1).astype(int)
-    # step_size = length/nsteps
     new_tracks = np.vstack([split_track(tracks[i], nsteps[i], length[i], direction[i], i) for i in range(tracks.shape[0])])
     return new_tracks
 
@@ -127,22 +116,6 @@ def set_pixel_plane(params, tracks, fields):
     pixel_plane = cond.astype(int).argmax(axis=-1)
     tracks[:, fields.index('pixel_plane')] = pixel_plane
     return tracks
-
-@partial(jit, static_argnames=['fields'])
-def order_tracks_by_z(tracks, fields):
-    #Modifies start and end in tracks so that z_start < z_end
-    new_tracks = tracks.copy()
-    cond = tracks[:, fields.index("z_start")] < tracks[:, fields.index("z_end")]
-
-    new_tracks = new_tracks.at[:, fields.index("x_start")].set(lax.select(cond, tracks[:, fields.index("x_start")], tracks[:, fields.index("x_end")]))
-    new_tracks = new_tracks.at[:, fields.index("x_end")].set(lax.select(cond, tracks[:, fields.index("x_end")], tracks[:, fields.index("x_start")]))
-    new_tracks = new_tracks.at[:, fields.index("y_start")].set(lax.select(cond, tracks[:, fields.index("y_start")], tracks[:, fields.index("y_end")]))
-    new_tracks = new_tracks.at[:, fields.index("y_end")].set(lax.select(cond, tracks[:, fields.index("y_end")], tracks[:, fields.index("y_start")]))
-    new_tracks = new_tracks.at[:, fields.index("z_start")].set(lax.select(cond, tracks[:, fields.index("z_start")], tracks[:, fields.index("z_end")]))
-    new_tracks = new_tracks.at[:, fields.index("z_end")].set(lax.select(cond, tracks[:, fields.index("z_end")], tracks[:, fields.index("z_start")]))
-
-    return new_tracks
-
 
 def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
     # return jnp.sqrt(jnp.sum((tracks[:, fields.index("n_electrons")] - tracks_ref[:, fields.index("n_electrons")])**2))

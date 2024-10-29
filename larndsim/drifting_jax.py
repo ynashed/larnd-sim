@@ -4,7 +4,7 @@ electrons towards the anode.
 """
 
 import jax.numpy as jnp
-from jax import jit, lax, debug
+from jax import jit
 from functools import partial
 
 import logging
@@ -43,7 +43,6 @@ def drift(params, tracks, fields):
 
     #TODO: investigate using jnp.where instead of masking all values
     #TODO: n_electrons should be int, but truncation makes gradients vanish
-    #TODO: Here we assume track["t0"] = 0 , wrt the new larndsim code
     tracks = tracks.at[:, fields.index("n_electrons")].set(
         tracks[:, fields.index("n_electrons")] * lifetime_red * mask)
     tracks = tracks.at[:, fields.index("long_diff")].set(
