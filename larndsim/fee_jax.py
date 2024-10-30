@@ -4,7 +4,7 @@ Module that simulates the front-end electronics (triggering, ADC)
 
 import jax.numpy as jnp
 from jax.profiler import annotate_function
-from jax import jit, vmap, lax, random
+from jax import jit, vmap, lax, random, debug
 
 @annotate_function
 @jit
@@ -63,8 +63,10 @@ def get_adc_values(params, pixels_signals):
         idx_pix = jnp.arange(0, q_sum.shape[0])
         # Then linearly interpolate for the intersection point.
         dq = (q_sum[idx_pix, idx_t + 1]-q_sum[idx_pix, idx_t])
-        eps = 1e-7
-        idx_val = jnp.where(dq < eps*params.DISCRIMINATION_THRESHOLD, 0, idx_t + 1 - (q_sum[idx_pix, idx_t + 1] - params.DISCRIMINATION_THRESHOLD)/dq)
+
+        eps = 1e-4 #Any smaller value leads to NaN in gradients
+        # idx_val = jnp.where(dq < eps*params.DISCRIMINATION_THRESHOLD, 0, idx_t + 1 - (q_sum[idx_pix, idx_t + 1] - params.DISCRIMINATION_THRESHOLD)/(dq+1e-3*params.DISCRIMINATION_THRESHOLD))
+        idx_val = jnp.where(dq < eps*params.DISCRIMINATION_THRESHOLD, 0, idx_t + 1 - (q_sum[idx_pix, idx_t + 1] - params.DISCRIMINATION_THRESHOLD)/jnp.where(dq < eps*params.DISCRIMINATION_THRESHOLD, 1, dq))
 
         ic = jnp.zeros((q_sum.shape[0],))
         ic = ic.at[idx_pix].set(idx_val)
@@ -121,11 +123,10 @@ def get_adc_values(params, pixels_signals):
     init_loop = (random.split(key, 1)[0], q_sum, q_cumsum)
     
     _, (full_adc, full_ticks) = lax.scan(find_hit, init_loop, jnp.arange(0, params.MAX_ADC_VALUES))
-
-    #Single iteration to detect NaNs
+    # Single iteration to detect NaNs
     # _, (full_adc, full_ticks) = find_hit(init_loop, 0)
-    # full_adc = jnp.repeat(full_adc[:, jnp.newaxis], params.MAX_ADC_VALUES, axis=1)
-    # full_ticks = jnp.repeat(full_ticks[:, jnp.newaxis], params.MAX_ADC_VALUES, axis=1)
+    # full_adc = jnp.repeat(full_adc[:, jnp.newaxis], params.MAX_ADC_VALUES, axis=1).T
+    # full_ticks = jnp.repeat(full_ticks[:, jnp.newaxis], params.MAX_ADC_VALUES, axis=1).T
     # full_adc_ticks_list = jnp.stack(full_adc_ticks_list, axis=1)
 
     return full_adc.T, full_ticks.T

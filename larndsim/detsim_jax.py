@@ -5,7 +5,7 @@ on the pixels
 
 import jax.numpy as jnp
 from jax.profiler import annotate_function
-from jax import jit, lax, random
+from jax import jit, lax, random, debug
 from jax.nn import sigmoid
 from functools import partial
 
@@ -42,6 +42,32 @@ def accumulate_signals(wfs, currents_idx, charge, response, pixID, start_ticks, 
     # Update wfs with accumulated signals
     wfs = wfs.ravel()
     wfs = wfs.at[(flat_indices,)].add(response.take(signal_indices)*jnp.repeat(charge, signal_length))
+    return wfs.reshape((Npixels, Nticks))
+
+@jit
+def accumulate_signals_parametrized(wfs, signals, pixID, start_ticks):
+    # Get the number of pixels and ticks
+    Npixels, Nticks = wfs.shape
+
+    # Compute indices for updating wfs, taking into account start_ticks
+    time_ticks = start_ticks[..., None] + jnp.arange(signals.shape[1])
+
+    time_ticks = jnp.where((time_ticks < 0 ) | (time_ticks >= wfs.shape[1] - 1), 0, time_ticks + 1)
+
+    start_indices = pixID * Nticks
+
+    end_indices = start_indices[..., None] + time_ticks
+
+    # Compute indices for updating wfs, taking into account start_ticks
+    start_indices = jnp.expand_dims(pixID, axis=1) * Nticks + start_ticks[:, jnp.newaxis]
+    end_indices = start_indices + jnp.arange(signals.shape[1])
+
+    # Flatten the indices
+    flat_indices = jnp.ravel(end_indices)
+
+    # Update wfs with accumulated signals
+    wfs = wfs.ravel()
+    wfs = wfs.at[(flat_indices,)].add(signals.ravel())
     return wfs.reshape((Npixels, Nticks))
 
 

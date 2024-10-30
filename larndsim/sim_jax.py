@@ -7,7 +7,7 @@ import logging
 from jax.experimental import checkify
 
 # from larndsim.consts_jax import consts
-from larndsim.detsim_jax import generate_electrons, get_pixels, id2pixel, accumulate_signals, current_lut, get_pixel_coordinates
+from larndsim.detsim_jax import generate_electrons, get_pixels, id2pixel, accumulate_signals, accumulate_signals_parametrized, current_lut, get_pixel_coordinates, current_mc
 from larndsim.quenching_jax import quench
 from larndsim.drifting_jax import drift
 from larndsim.fee_jax import get_adc_values, digitize
@@ -16,7 +16,7 @@ from larndsim.softdtw_jax import SoftDTW
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-size_history = []
+size_history_dict = {}
 
 def jax_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)
@@ -121,7 +121,7 @@ def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
     # return jnp.sqrt(jnp.sum((tracks[:, fields.index("n_electrons")] - tracks_ref[:, fields.index("n_electrons")])**2))
     #TODO: Put back something that is actually good here!
     all_pixels = jnp.concatenate([pIDs, pIDs_ref])
-    padded_size = pad_size(jnp.unique(all_pixels).shape[0])
+    padded_size = pad_size(jnp.unique(all_pixels).shape[0], "unique_pixels")
     unique_pixels = jnp.sort(jnp.unique(all_pixels, size=padded_size, fill_value=-1))
     nb_pixels = unique_pixels.shape[0]
     pix_renumbering = jnp.searchsorted(unique_pixels, pIDs)
@@ -150,10 +150,10 @@ def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
 
     # Add some penalty term for the time information also
 
-    # signals = jnp.zeros((nb_pixels, adcs.shape[1]))
-    # signals = accumulate_signals(signals, ticks, pix_renumbering, jnp.zeros_like(pix_renumbering))
-    # signals = accumulate_signals(signals, -ticks_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
-    # time_loss = jnp.sum(signals**2)
+    signals = jnp.zeros((nb_pixels, adcs.shape[1]))
+    signals = accumulate_signals_parametrized(signals, ticks, pix_renumbering, jnp.zeros_like(pix_renumbering))
+    signals = accumulate_signals_parametrized(signals, -ticks_ref, pix_renumbering_ref, jnp.zeros_like(pix_renumbering_ref))
+    time_loss = jnp.sum(signals**2)
     time_loss = 0
 
     aux = {
@@ -166,8 +166,13 @@ def loss(adcs, pIDs, ticks, adcs_ref, pIDs_ref, ticks_ref, fields):
 
     return adc_loss + time_loss, aux
 
-def pad_size(cur_size):
-    global size_history
+def pad_size(cur_size, tag):
+    global size_history_dict
+
+    if tag not in size_history_dict:
+        size_history_dict[tag] = []
+    size_history = size_history_dict[tag]
+
     pad_threshold = 0.05
     #If an input with this shape has already been used, we are fine
     if cur_size in size_history:
@@ -185,7 +190,8 @@ def pad_size(cur_size):
     logger.debug(f"Input size {cur_size} not existing. Creating new size of {new_size}")
     return new_size
 
-def simulate(params, response, tracks, fields, rngkey = 0):
+@partial(jit, static_argnames=['fields'])
+def simulate_drift(params, tracks, fields, rngkey):
     #Quenching and drifting
     new_tracks = quench(params, tracks, 2, fields)
     new_tracks = drift(params, new_tracks, fields)
@@ -195,49 +201,98 @@ def simulate(params, response, tracks, fields, rngkey = 0):
     #Getting the pixels where the electrons are
     pIDs = get_pixels(params, electrons, fields)
 
-    n_neigh = params.number_pix_neighbors
-    npix = (2*n_neigh + 1)**2
-    main_pixels = pIDs[:, 2*n_neigh*(n_neigh+1)] #Getting the main pixel
-    pIDs = pIDs.ravel()
+    return electrons, pIDs
 
-    #Sorting the pixels and getting the unique ones
-    padded_size = pad_size(jnp.unique(main_pixels.ravel()).shape[0])
-    unique_pixels = jnp.sort(jnp.unique(main_pixels.ravel(), size=padded_size, fill_value=-1))
-
+@jit
+def get_renumbering(pIDs, unique_pixels):
     #Getting the renumbering of the pixels
-    npixels = unique_pixels.shape[0]
-    pix_renumbering = jnp.searchsorted(unique_pixels, pIDs)
+    pIDs = pIDs.ravel()
+    pix_renumbering = jnp.searchsorted(unique_pixels, pIDs, method='sort')
+
     #Only getting the electrons for which the pixels are in the active region
     mask = (pix_renumbering < unique_pixels.size) & (unique_pixels[pix_renumbering] == pIDs)
-    pix_renumbering = pix_renumbering[mask]
-    elec_ids = jnp.nonzero(mask)[0]//npix #TODO: Optimize the cache size
-    electrons = electrons[elec_ids]
+    return mask, pix_renumbering
 
+@partial(jit, static_argnames=['fields'])
+def simulate_signals(params, electrons, mask_indices, pix_renumbering, unique_pixels, response, fields):
+    pix_renumbering = jnp.take(pix_renumbering, mask_indices, mode='fill', fill_value=0)
+    npix = (2*params.number_pix_neighbors + 1)**2
+    elec_ids = mask_indices//npix
+    electrons_renumbered = jnp.take(electrons, elec_ids, mode='fill', fill_value=0, axis=0)
     #Getting the pixel coordinates
-    xpitch, ypitch, plane, eid = id2pixel(params, unique_pixels[pix_renumbering])
+    xpitch, ypitch, plane, eid = id2pixel(params, unique_pixels)
     pixels_coord = get_pixel_coordinates(params, xpitch, ypitch, plane)
     #Getting the right indices for the currents
-    t0, currents_idx = current_lut(params, response, electrons, pixels_coord, fields)
-
-
-
+    t0, currents_idx = current_lut(params, response, electrons_renumbered, pixels_coord[pix_renumbering], fields)
+    npixels = unique_pixels.shape[0]
     nticks_wf = int(params.time_interval[1]/params.t_sampling) + 1 #Adding one first element to serve as a garbage collector
     wfs = jnp.zeros((npixels, nticks_wf))
 
     start_ticks = (t0/params.t_sampling + 0.5).astype(int) - params.time_window
+    
+
+    wfs = accumulate_signals(wfs, currents_idx, electrons_renumbered[:, fields.index("n_electrons")], response, pix_renumbering, start_ticks, params.signal_length)
+    integral, ticks = get_adc_values(params, wfs[:, 1:]*params.e_charge)
+
+    adcs = digitize(params, integral)
+    return adcs, unique_pixels, ticks, wfs[:, 1:]
+
+@partial(jit, static_argnames=['fields'])
+def simulate_signals_parametrized(params, electrons, pIDs, unique_pixels, fields):
+    xpitch, ypitch, plane, eid = id2pixel(params, pIDs)
+    
+    pixels_coord = get_pixel_coordinates(params, xpitch, ypitch, plane)
+    t0, signals = current_mc(params, electrons, pixels_coord, fields)
+
+    pix_renumbering = jnp.searchsorted(unique_pixels, pIDs)
+
+    nticks_wf = int(params.time_interval[1]/params.t_sampling) + 1 #Adding one first element to serve as a garbage collector
+    wfs = jnp.zeros((unique_pixels.shape[0], nticks_wf))
+
+    
+    start_ticks = (t0/params.t_sampling + 0.5).astype(int) - signals.shape[1]
+
+    wfs = accumulate_signals_parametrized(wfs, signals, pix_renumbering, start_ticks)
+    # return signals, pix_renumbering, wfs, start_ticks, unique_pixels
+    integral, ticks = get_adc_values(params, wfs[:, 1:])
+    adcs = digitize(params, integral)
+    # return wfs, unique_pixels
+    return adcs, unique_pixels, ticks, wfs
+
+def simulate_parametrized(params, tracks, fields, rngkey = 0):
+    electrons, pIDs = simulate_drift(params, tracks, fields, rngkey)
+    pIDs = pIDs.ravel()
+    unique_pixels = jnp.sort(jnp.unique(pIDs))
+
+    return simulate_signals_parametrized(params, electrons, pIDs, unique_pixels, fields)
+    
+
+
+def simulate(params, response, tracks, fields, rngkey = 0):
+    electrons, pIDs = simulate_drift(params, tracks, fields, rngkey)
+
+    main_pixels = pIDs[:, 2*params.number_pix_neighbors*(params.number_pix_neighbors+1)] #Getting the main pixel
+    #Sorting the pixels and getting the unique ones
+    unique_pixels = jnp.unique(main_pixels.ravel())
+    padded_size = pad_size(unique_pixels.shape[0], "unique_pixels")
+
+    unique_pixels = jnp.sort(jnp.pad(unique_pixels, (0, padded_size - unique_pixels.shape[0]), mode='constant', constant_values=-1))
+
+    mask, pix_renumbering = get_renumbering(pIDs, unique_pixels)
+    mask_indices = jnp.nonzero(mask)[0]
+
+    padded_size = pad_size(mask_indices.shape[0], "pix_renumbering")
+    mask_indices = jnp.pad(mask_indices, (0, padded_size - mask_indices.shape[0]), mode='constant', constant_values=-1)
 
     # errors = checkify.user_checks | checkify.index_checks | checkify.float_checks
     # checked_f = checkify.checkify(accumulate_signals, errors=errors)
     # err, wfs = checked_f(wfs, currents_idx, electrons[:, fields.index("n_electrons")], response, pix_renumbering, start_ticks - earliest_tick, params.signal_length)
     # err.throw()
 
-    wfs = accumulate_signals(wfs, currents_idx, electrons[:, fields.index("n_electrons")], response, pix_renumbering, start_ticks, params.signal_length)
-
-    integral, ticks = get_adc_values(params, wfs[:, 1:]*params.e_charge)
-
-    adcs = digitize(params, integral)
+    return simulate_signals(params, electrons, mask_indices, pix_renumbering, unique_pixels, response, fields)
+    
     # return wfs, unique_pixels
-    return adcs, unique_pixels, ticks, wfs[:, 1:], t0, currents_idx, electrons, pix_renumbering, start_ticks
+    # return adcs, unique_pixels, ticks, wfs[:, 1:], t0, currents_idx, electrons, pix_renumbering, start_ticks
 
 #TODO: Finish this thing
 def calc_sdtw(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **kwargs):
@@ -256,10 +311,14 @@ def calc_sdtw(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **kwargs)
 
     return loss, aux
 
-def params_loss(params, response, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
-    adcs, pixels, ticks, wfs, _, _, _, _, _ = simulate(params, response, tracks, fields, rngkey)
+# def params_loss(params, response, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
+#     adcs, pixels, ticks = simulate(params, response, tracks, fields, rngkey)
+#     loss_val, aux = loss_fn(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **loss_kwargs)
+#     return loss_val, aux
+
+def params_loss(params, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
+    adcs, pixels, ticks, wfs = simulate_parametrized(params, tracks, fields, rngkey)
     loss_val, aux = loss_fn(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **loss_kwargs)
-    aux['signals'] = wfs
     return loss_val, aux
 
 def update_params(params, params_init, grads, to_propagate, lr):
