@@ -1,7 +1,6 @@
 import numpy as np
 from numpy.lib import recfunctions as rfn
 import torch
-from soft_dtw_cuda import SoftDTW
 
 def torch_from_structured(tracks):
     tracks_np = rfn.structured_to_unstructured(tracks, copy=True, dtype=np.float32)
@@ -174,20 +173,6 @@ def _abs_dist_func(x, y):
     x = x.unsqueeze(2).expand(-1, n, m, d)
     y = y.unsqueeze(1).expand(-1, n, m, d)
     return torch.abs(x - y).sum(3)
-
-def calc_soft_dtw_loss(embed_out, embed_targ, adc_only=True, t_only=True, gamma=1):
-    # Unroll embedding
-    x_out_nz, y_out_nz, z_out_nz, time_list_out_nz, adc_out_nz = embed_out
-    x_targ_nz, y_targ_nz, z_targ_nz, time_list_targ_nz, adc_targ_nz = embed_targ
-
-    sdtw = SoftDTW(use_cuda=False, gamma=1, dist_func = _abs_dist_func)
-
-    if adc_only:
-        return sdtw(adc_out_nz[None, :, None], adc_targ_nz[None, :, None])
-    elif t_only:
-        return sdtw(time_list_out_nz[None, :, None], time_list_targ_nz[None, :, None])
-    else:
-        raise NotImplementedError("Soft DTW only implemented for ADC and t independently")
 
 
 def param_l2_reg(param, sim):

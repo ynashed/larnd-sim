@@ -119,7 +119,7 @@ def load_detector_properties(params_cls, detprop_file, pixel_file):
             "time_window": 189.1, #us,
             "e_charge": 1.602e-19,
             "t_sampling": 0.1,
-            "time_padding": 5,
+            "time_padding": 190,
             "response_bin_size": 0.04434,
             "number_pix_neighbors": 1,
             "electron_sampling_resolution": 0.001,

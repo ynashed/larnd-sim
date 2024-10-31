@@ -11,7 +11,6 @@ from larndsim.detsim_jax import generate_electrons, get_pixels, id2pixel, accumu
 from larndsim.quenching_jax import quench
 from larndsim.drifting_jax import drift
 from larndsim.fee_jax import get_adc_values, digitize
-from larndsim.softdtw_jax import SoftDTW
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -235,7 +234,7 @@ def simulate_signals(params, electrons, mask_indices, pix_renumbering, unique_pi
     integral, ticks = get_adc_values(params, wfs[:, 1:]*params.e_charge)
 
     adcs = digitize(params, integral)
-    return adcs, unique_pixels, ticks, wfs[:, 1:]
+    return adcs, unique_pixels, ticks
 
 @partial(jit, static_argnames=['fields'])
 def simulate_signals_parametrized(params, electrons, pIDs, unique_pixels, fields):
@@ -257,12 +256,16 @@ def simulate_signals_parametrized(params, electrons, pIDs, unique_pixels, fields
     integral, ticks = get_adc_values(params, wfs[:, 1:])
     adcs = digitize(params, integral)
     # return wfs, unique_pixels
-    return adcs, unique_pixels, ticks, wfs
+    return adcs, unique_pixels, ticks
 
 def simulate_parametrized(params, tracks, fields, rngkey = 0):
     electrons, pIDs = simulate_drift(params, tracks, fields, rngkey)
     pIDs = pIDs.ravel()
-    unique_pixels = jnp.sort(jnp.unique(pIDs))
+    unique_pixels = jnp.unique(pIDs)
+    padded_size = pad_size(unique_pixels.shape[0], "unique_pixels")
+
+    unique_pixels = jnp.sort(jnp.pad(unique_pixels, (0, padded_size - unique_pixels.shape[0]), mode='constant', constant_values=-1))
+ 
 
     return simulate_signals_parametrized(params, electrons, pIDs, unique_pixels, fields)
     
@@ -294,30 +297,13 @@ def simulate(params, response, tracks, fields, rngkey = 0):
     # return wfs, unique_pixels
     # return adcs, unique_pixels, ticks, wfs[:, 1:], t0, currents_idx, electrons, pix_renumbering, start_ticks
 
-#TODO: Finish this thing
-def calc_sdtw(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **kwargs):
-    dstw = SoftDTW(**kwargs)
+def params_loss(params, response, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
+    adcs, pixels, ticks = simulate(params, response, tracks, fields, rngkey)
+    loss_val, aux = loss_fn(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **loss_kwargs)
+    return loss_val, aux
 
-    sorted_adcs = adcs[jnp.argsort(pixels)]
-    sorted_ref = ref[jnp.argsort(pixels_ref)]
-    adc_loss = dstw.pairwise(sorted_adcs, sorted_ref)
-    # adc_loss = adc_loss/len(sorted_adcs)/len(sorted_ref)
-    time_loss = 0
-    loss = adc_loss + time_loss
-    aux = {
-        'adc_loss': adc_loss,
-        'time_loss': time_loss
-    }
-
-    return loss, aux
-
-# def params_loss(params, response, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
-#     adcs, pixels, ticks = simulate(params, response, tracks, fields, rngkey)
-#     loss_val, aux = loss_fn(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **loss_kwargs)
-#     return loss_val, aux
-
-def params_loss(params, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
-    adcs, pixels, ticks, wfs = simulate_parametrized(params, tracks, fields, rngkey)
+def params_loss_parametrized(params, ref, pixels_ref, ticks_ref, tracks, fields, rngkey=0, loss_fn=loss, **loss_kwargs):
+    adcs, pixels, ticks = simulate_parametrized(params, tracks, fields, rngkey)
     loss_val, aux = loss_fn(adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields, **loss_kwargs)
     return loss_val, aux
 

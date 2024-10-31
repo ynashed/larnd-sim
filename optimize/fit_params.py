@@ -4,10 +4,11 @@ sys.path.insert(0, larndsim_dir)
 import shutil
 import pickle
 import numpy as np
-from .utils import get_id_map, all_sim, embed_adc_list, calc_loss, calc_soft_dtw_loss
+from .utils import get_id_map, all_sim, embed_adc_list
 from .ranges import ranges
-from larndsim.sim_jax import simulate, params_loss, calc_sdtw, loss
+from larndsim.sim_jax import simulate, params_loss, loss, simulate_parametrized, params_loss_parametrized
 from larndsim.consts_jax import build_params_class, load_detector_properties
+from larndsim.softdtw_jax import SoftDTW
 import logging
 import torch
 import optax
@@ -80,14 +81,17 @@ class ParamFitter:
 
         self.profile_gradient = profile_gradient
 
-        # self.fit_diffs = fit_diffs
-        # If you have access to a GPU, sim works trivially/is much faster
-        #TODO: See how to change/take care of CUDA availability with JAX
-        if torch.cuda.is_available():
-            self.device = 'cuda'
-            # torch.set_default_tensor_type('torch.cuda.FloatTensor')
-        else:
-            self.device = 'cpu'
+        self.current_mode = config.mode
+        self.electron_sampling_resolution = config.electron_sampling_resolution
+        self.number_pix_neighbors = config.number_pix_neighbors
+        self.signal_length = config.signal_length
+
+        if self.current_mode == 'lut':
+            self.lut_file = config.lut_file
+            self.load_lut()
+            self.number_pix_neighbors = 0
+
+
         self.track_fields = track_fields
         if type(relevant_params) == dict:
             self.relevant_params_list = list(relevant_params.keys())
@@ -127,6 +131,11 @@ class ParamFitter:
         
         Params = build_params_class(self.relevant_params_list)
         ref_params = load_detector_properties(Params, detector_props, pixel_layouts)
+        ref_params = ref_params.replace(
+            electron_sampling_resolution=self.electron_sampling_resolution,
+            number_pix_neighbors=self.number_pix_neighbors,
+            signal_length=self.signal_length,
+            time_window=self.signal_length)
 
         initial_params = {}
 
@@ -193,11 +202,13 @@ class ParamFitter:
             self.loss_fn_kw = { }
             logger.info("Using space match loss")
         elif loss_fn == "SDTW":
-            self.loss_fn = calc_sdtw
+            self.loss_fn = self.calc_sdtw
 
-            self.loss_fn_kw = {
-                                'gamma' : 1
-                              }
+            loss_fn_kw = {
+                            'gamma' : 1
+                            }
+            self.loss_fn_kw = {}
+            self.dstw = SoftDTW(**loss_fn_kw)
         else:
             self.loss_fn = loss_fn
             self.loss_fn_kw = {}
@@ -225,6 +236,15 @@ class ParamFitter:
             self.training_history['optimizer_fn_name'] = self.optimizer_fn_name
 
         self.training_history['config'] = config
+
+    def load_lut(self):
+        response = np.load(self.lut_file)
+        extended_response = np.zeros((50, 50, 1891))
+        extended_response[:45, :45, :] = response
+        response = extended_response
+        baseline = np.sum(response[:, :, :-self.signal_length+1], axis=-1)
+        response = np.concatenate([baseline[..., None], response[..., -self.signal_length+1:]], axis=-1)
+        self.response = response
 
     def clip_values(self, mini=0.01, maxi=100):
         cur_norm_values = extract_relevant_params(self.norm_params, self.relevant_params_list)
@@ -334,7 +354,6 @@ class ParamFitter:
                     # Get rid of the extra dimension and padding elements for the loaded data
                     # selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
                     # selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
-                    # event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
                     
                     #Convert torch tracks to jax
                     selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
@@ -343,13 +362,13 @@ class ParamFitter:
                     #Simulate the output for the whole batch
                     loss_ev = []
 
-                    # selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
-                    # selected_tracks_torch = selected_tracks_torch.to(self.device)
-
                     #Simulating the reference during the first epoch
                     fname = 'target_' + self.out_label + '/batch' + str(i) + '_target.npz'
                     if epoch == 0:
-                        ref_adcs, ref_unique_pixels, ref_ticks = simulate(self.target_params, selected_tracks, self.track_fields)
+                        if self.current_mode == 'lut':
+                            ref_adcs, ref_unique_pixels, ref_ticks = simulate(self.target_params, self.response, selected_tracks, self.track_fields)
+                        else:
+                            ref_adcs, ref_unique_pixels, ref_ticks = simulate_parametrized(self.target_params, selected_tracks, self.track_fields)
                         # embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
                         #Saving the target for the batch
                         #TODO: See if we have to do this for each event
@@ -367,9 +386,10 @@ class ParamFitter:
                     # Simulate and get output
                     # loss_val, aux = params_loss(self.current_params, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0, loss_fn=self.loss_fn, **self.loss_fn_kw)
                     # grads, aux = jax.grad(params_loss, (0), has_aux = True)(self.current_params, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0, loss_fn=self.loss_fn, **self.loss_fn_kw)
-                    
-                    (loss_val, aux), grads = value_and_grad(params_loss, (0), has_aux = True)(self.current_params, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0, loss_fn=self.loss_fn, **self.loss_fn_kw)
-
+                    if self.current_mode == 'lut':
+                        (loss_val, aux), grads = value_and_grad(params_loss, (0), has_aux = True)(self.current_params, self.response, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0, loss_fn=self.loss_fn, **self.loss_fn_kw)
+                    else:
+                        (loss_val, aux), grads = value_and_grad(params_loss_parametrized, (0), has_aux = True)(self.current_params, ref_adcs, ref_unique_pixels, ref_ticks, selected_tracks, self.track_fields, rngkey=0, loss_fn=self.loss_fn, **self.loss_fn_kw)
                     print(f"Loss: {loss_val} ; ADC loss: {aux['adc_loss']} ; Time loss: {aux['time_loss']}")
 
                     if not self.profile_gradient:
@@ -441,181 +461,21 @@ class ParamFitter:
                         if total_iter >= iterations:
                             break
 
-        #         # Print out params at each epoch
-        #         if epoch % print_freq == 0 and iterations is None:
-        #             for param in self.relevant_params_list:
-        #                 logger.info(f"{param} {getattr(self.sim_physics,param).item()}")
+    #TODO: Finish this thing
+    def calc_sdtw(self, adcs, pixels, ticks, ref, pixels_ref, ticks_ref, fields):
 
-        #         # Keep track of training history
-        #         for param in self.relevant_params_list:
-        #             self.training_history[param].append(normalize_param(getattr(self.sim_iter, param).item(), param, scheme=self.norm_scheme, undo_norm=True))
-        #         if len(losses_batch) > 0:
-        #             self.training_history['losses'].append(np.mean(losses_batch))
+        sorted_adcs = adcs[jnp.argsort(pixels)]
+        sorted_ref = ref[jnp.argsort(pixels_ref)]
 
-        #         # Save history in pkl files
-        #         n_steps = len(self.training_history[param])
-        #         if n_steps % save_freq == 0 and iterations is None:
-        #             with open(f'fit_result/history_{param}_epoch{n_steps}_{self.out_label}.pkl', "wb") as f_history:
-        #                 pickle.dump(self.training_history, f_history)
-        #             if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
-        #                 os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl') 
+        # sorted_adcs = adcs.flatten()[jnp.argsort(ticks.flatten())]
+        # sorted_ref = ref.flatten()[jnp.argsort(ticks_ref.flatten())]
+        adc_loss = self.dstw.pairwise(sorted_adcs, sorted_ref)
+        # adc_loss = adc_loss/len(sorted_adcs)/len(sorted_ref)
+        time_loss = 0
+        loss = adc_loss + time_loss
+        aux = {
+            'adc_loss': adc_loss,
+            'time_loss': time_loss
+        }
 
-        # if iterations is None:
-        #     with open(f'fit_result/history_{param}_{self.out_label}.pkl', "wb") as f_history:
-        #         pickle.dump(self.training_history, f_history)
-        #         if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
-        #             os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl')
-
-    def loss_scan_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
-
-        if len(self.relevant_params_list) > 1:
-            raise NotImplementedError("Can't do loss scan for more than one variable at a time!")
-
-        param = self.relevant_params_list[0]
-        if param_range is None:
-            param_range = [ranges[param]['down'], ranges[param]['up']]
-        param_vals = torch.linspace(param_range[0], param_range[1], n_steps)
-
-        # make a folder for the pixel target
-        if os.path.exists(f'target_{param}_batch'):
-            shutil.rmtree(f'target_{param}_batch', ignore_errors=True)
-        os.makedirs(f'target_{param}_batch')
-
-        # make a folder for the output
-        if os.path.exists(f'result_{param}'):
-            shutil.rmtree(f'result_{param}', ignore_errors=True)
-        os.makedirs(f'result_{param}')
-
-        # The scanning loop
-        with tqdm(total=len(param_vals)*len(dataloader)) as pbar:
-            for i, selected_tracks_bt_torch in enumerate(dataloader):
-                # Losses for each batch
-                scan_losses = []
-                scan_grads = []
-
-                # Get rid of the extra dimension and padding elements for the loaded data
-                selected_tracks_bt_torch = torch.flatten(selected_tracks_bt_torch, start_dim=0, end_dim=1)
-                selected_tracks_bt_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("dx")] > 0]
-                event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
-
-                # set up target per batch
-                for ev in unique_eventIDs:
-                    logger.info("batch: " + str(i) + '; ev:' + str(int(ev)))
-                    selected_tracks_torch = selected_tracks_bt_torch[selected_tracks_bt_torch[:, self.track_fields.index("eventID")] == ev]
-                    selected_tracks_torch = selected_tracks_torch.to(self.device)
-
-                    if shuffle:
-                        target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                                      event_id_map, unique_eventIDs,
-                                                                      return_unique_pix=True)
-                        embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
-                    else:
-                        # Simulate target and store them
-                        if os.path.exists(f'target_{param}_batch/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt'):
-                            embed_target = torch.load(f'target_{param}_batch/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
- 
-                        else:
-                            target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch, self.track_fields,
-                                                                          event_id_map, unique_eventIDs,
-                                                                          return_unique_pix=True)
-                            embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
-
-                            torch.save(embed_target, f'target_{param}_batch/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
-
-
-                for run_no, param_val in enumerate(param_vals):
-                    setattr(self.sim_iter, param, param_val/ranges[param]['nom'])
-                    self.sim_iter.track_gradients([param])
-
-                    loss_ev_per_val = []
-                    # Calculate loss per event
-                    for ev in unique_eventIDs:
-
-                        # Undo normalization (sim -> sim_physics)
-                        for param in self.relevant_params_list:
-                            setattr(self.sim_physics, param, getattr(self.sim_iter, param)*ranges[param]['nom'])
-                            if run_no % print_freq == 0:
-                                logger.info(f"{param}, {getattr(self.sim_physics, param)}")
-
-                        # Simulate and get output
-                        output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch, self.track_fields,
-                                                  event_id_map, unique_eventIDs,
-                                                  return_unique_pix=True)
-
-                        # Embed both output and target into "full" image space
-                        embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
-
-                        # Calc loss between simulated and target + backprop
-                        loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
-
-                        # To be investigated -- sometimes we get nans. Avoid doing a step if so
-                        if not loss.isnan():
-                            loss_ev_per_val.append(loss)
-                        else:
-                            logger.warning("Got NaN as loss!")
-
-                    # Average out the loss in different events per batch
-                    if len(loss_ev_per_val) > 0:
-                        loss_ev_mean = torch.mean(torch.stack(loss_ev_per_val))
-                        loss_ev_mean.backward()
-                        scan_losses.append(loss_ev_mean.item())
-                        scan_grads.append(getattr(self.sim_iter, param).grad.item())
-
-                    else:
-                        scan_losses.append(np.nan)
-                        scan_grads.append(np.nan)
-
-
-                    # store the scan outcome
-                    if run_no % save_freq == 0:
-                        recording = {'param' : param,
-                                     'param_vals': param_vals,
-                                     'norm_factor' : ranges[param]['nom'],
-                                     'target_val' : getattr(self.sim_target, param),
-                                     'losses' : scan_losses,
-                                     'grads' : scan_grads }
-
-                        outname = f"result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{run_no}"
-                        with open(outname+".pkl", "wb") as f:
-                            pickle.dump(recording, f)
-                        if os.path.exists(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{run_no-save_freq}.pkl'):
-                            os.remove(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{run_no-save_freq}.pkl')
-
-                    pbar.update(1)
-
-                recording = {'param' : param,
-                             'param_vals': param_vals,
-                             'norm_factor' : ranges[param]['nom'],
-                             'target_val' : getattr(self.sim_target, param),
-                             'losses' : scan_losses,
-                             'grads' : scan_grads }
-    
-                outname = f"result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}"
-                with open(outname+".pkl", "wb") as f:
-                    pickle.dump(recording, f)
-                if os.path.exists(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{len(param_vals)-save_freq}.pkl'):
-                    os.remove(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{len(param_vals)-save_freq}.pkl')
-
-            # average the loss and grad
-            all_scan_losses = []
-            all_scan_grads = []
-            for i in range(len(dataloader)):
-                #with open(f'loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}.pkl', 'rb') as pkl_file:
-                history = pickle.load(open(f'result_{param}/loss_scan_batch{i}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}.pkl', "rb"))
-                all_scan_losses.append(np.array(history['losses']))
-                all_scan_grads.append(np.array(history['grads']))
-            scan_losses_mean = np.mean(np.array(all_scan_losses), axis=0)
-            scan_grads_mean = np.mean(np.array(all_scan_grads), axis=0)
-
-            recording = {'param' : param,
-                         'param_vals': param_vals,
-                         'norm_factor' : ranges[param]['nom'],
-                         'target_val' : getattr(self.sim_target, param),
-                         'losses' : scan_losses_mean,
-                         'grads' : scan_grads_mean }
-
-            outname = f"result_{param}/loss_scan_mean_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}"
-            with open(outname+".pkl", "wb") as f:
-                pickle.dump(recording, f)
-
-        return recording, outname
+        return loss, aux

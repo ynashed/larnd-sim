@@ -87,6 +87,11 @@ class TracksDataset(Dataset):
             tracks['z_end'] = x_end
             tracks['z'] = x
 
+        
+
+        if not 't0' in tracks.dtype.names:
+            tracks = rfn.append_fields(tracks, 't0', np.zeros(tracks.shape[0]), usemask=False)
+        
         self.track_fields = tracks.dtype.names
 
         # flat index for all reasonable track [eventID, trackID] 

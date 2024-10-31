@@ -31,10 +31,13 @@ def make_param_list(config):
 
 
 def main(config):
-    jax.config.update('jax_platform_name', 'cpu')
+    jax.config.update('jax_platform_name', 'gpu')
     jax.config.update("jax_debug_nans", False)
     if config.print_input:
         logger.info(f"fit label: {config.out_label}")
+
+    if config.lut_file == "" and config.mode == 'lut':
+        return 1, 'Error: LUT file is required for mode "lut"'
 
     iterations = config.iterations
     max_nbatch = config.max_nbatch
@@ -180,6 +183,11 @@ if __name__ == '__main__':
                         help="Iterating only over the pixels of each track (no cartesian product of all pixels x all tracks)")
     parser.add_argument("--profile_gradient", dest="profile_gradient", default=False, action="store_true",
                         help="To profile the gradient and loss instead of making an actual fit.")
+    parser.add_argument('--mode', type=str, help='Mode used to simulate the induced current on the pixels', choices=['lut', 'parametrized'], default='lut')
+    parser.add_argument('--electron_sampling_resolution', type=float, required=True, help='Electron sampling resolution')
+    parser.add_argument('--number_pix_neighbors', type=int, required=True, help='Number of pixel neighbors')
+    parser.add_argument('--signal_length', type=int, required=True, help='Signal length')
+    parser.add_argument('--lut_file', type=str, required=False, default="", help='Path to the LUT file')
 
     try:
         args = parser.parse_args()

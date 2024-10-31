@@ -14,12 +14,13 @@
 #SBATCH --time=3:00:00
 
 #BASE DECLARATIONS
-TARGET_SEED=2
+TARGET_SEED=3
 # PARAMS="tran_diff long_diff Ab kb lifetime"
-BATCH_SIZE=200
-ITERATIONS=250
+BATCH_SIZE=500
+ITERATIONS=4000
 DATA_SEED=1
-INPUT_FILE=/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5
+# INPUT_FILE=/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5
+INPUT_FILE=/home/pgranger/larnd-sim/jit_version/larnd-sim/data/mixed_sample/edepsim-output.h5
 UUID=$(uuidgen)
 #DECLARATIONS
 
@@ -28,7 +29,7 @@ PARAMS="param_list_lr.yaml"
 
 
 # export JAX_LOG_COMPILES=1
-singularity exec --bind /sdf,$SCRATCH python-jax.sif python3 -m optimize.example_run \
+# singularity exec --bind /sdf,$SCRATCH python-jax.sif python3 -m optimize.example_run \
 python3 -m optimize.example_run \
     --print_input \
     --data_sz -1 \
@@ -54,6 +55,14 @@ python3 -m optimize.example_run \
     --lr_kw '{"decay_rate" : 0.996, "transition_steps": 10}' \
     --track_z_bound 28 \
     --max_clip_norm_val 1 \
-    --loss_fn SDTW
+    --loss_fn SDTW \
+    --electron_sampling_resolution 0.005 \
+    --number_pix_neighbors 3 \
+    --signal_length 300 \
+    --mode 'lut' \
+    --lut_file /home/pgranger/larnd-sim/jit_version/original/build/lib/larndsim/bin/response_44.npy
+    # --number_pix_neighbors 0 \
+    # --signal_length 191 \
+    # --mode 'parametrized'
     # --profile_gradient 
     # --loss_fn space_match
