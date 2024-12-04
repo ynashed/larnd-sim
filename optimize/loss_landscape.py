@@ -39,7 +39,14 @@ def main(config):
     if iterations is not None:
         if max_nbatch is None or iterations < max_nbatch or max_nbatch < 0:
             max_nbatch = iterations
-    
+   
+    # sim
+    dataset_sim = TracksDataset(filename=config.input_file_sim, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack,
+                            track_len_sel=config.track_len_sel, max_abs_costheta_sel=config.max_abs_costheta_sel, min_abs_segz_sel=config.min_abs_segz_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, dx_low_limit=config.dx_low_limit, range_low_limit=config.range_low_limit, print_input=config.print_input, preload=config.preload)
+    # target
+    dataset_target = TracksDataset(filename=config.input_file_target, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack,
+                            track_len_sel=config.track_len_sel, max_abs_costheta_sel=config.max_abs_costheta_sel, min_abs_segz_sel=config.min_abs_segz_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, dx_low_limit=config.dx_low_limit, range_low_limit=config.range_low_limit, print_input=config.print_input, preload=config.preload)
+
     # load data using optimize/dataio.py
     dataset = TracksDataset(filename=config.input_file, ntrack=config.data_sz, max_nbatch=max_nbatch, seed=config.data_seed, random_ntrack=config.random_ntrack, 
                             track_len_sel=config.track_len_sel, max_abs_costheta_sel=config.max_abs_costheta_sel, min_abs_segz_sel=config.min_abs_segz_sel, track_z_bound=config.track_z_bound, max_batch_len=config.max_batch_len, print_input=config.print_input,
@@ -59,10 +66,10 @@ def main(config):
     # For readout noise: no_noise overrides if explicitly set to True. Otherwise, turn on noise
     # individually for target and guess
     param_list = make_param_list(config)
-    param_fit = ParamFitter(param_list, dataset.get_track_fields(),
+    param_fit = ParamFitter(param_list, dataset_sim.get_track_fields(),
                             track_chunk=config.track_chunk, pixel_chunk=config.pixel_chunk,
                             detector_props=config.detector_props, pixel_layouts=config.pixel_layouts,
-                            load_checkpoint=config.load_checkpoint, lr=config.lr, 
+                            load_checkpoint=config.load_checkpoint, lr=config.lr,
                             readout_noise_target=(not config.no_noise) and (not config.no_noise_target),
                             readout_noise_guess=(not config.no_noise) and (not config.no_noise_guess),
                             out_label=config.out_label, norm_scheme=config.norm_scheme, max_clip_norm_val=config.max_clip_norm_val,
@@ -71,8 +78,8 @@ def main(config):
                             no_adc=config.no_adc, loss_fn=config.loss_fn, shift_no_fit=config.shift_no_fit,
                             link_vdrift_eField=config.link_vdrift_eField, batch_memory=config.batch_memory, skip_pixels=config.skip_pixels,
                             set_target_vals=config.set_target_vals, vary_init=config.vary_init, seed_init=config.seed_init,
-                            config = config)
-    param_fit.make_target_sim(seed=config.seed)
+                            config = config, use_cuda=config.use_cuda, softdtw_gamma=config.softdtw_gamma)
+    param_fit.make_target_sim(seed=config.seed, fixed_range=config.fixed_range)
 
     losses_only = False
     # just scan for losses per batch without updating parameters?
@@ -104,7 +111,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--params", dest="param_list", default=[], nargs="+", required=True,
                         help="List of parameters to optimize. See consts_ep.py")
-    parser.add_argument("--input_file", dest="input_file",
+    parser.add_argument("--input_file_sim", dest="input_file_sim",
+                        default="/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5",
+                        help="Input data file")
+    parser.add_argument("--input_file_target", dest="input_file_target",
                         default="/sdf/group/neutrino/cyifan/muon-sim/fake_data_S1/edepsim-output.h5",
                         help="Input data file")
     parser.add_argument("--detector_props", dest="detector_props",
@@ -157,6 +167,10 @@ if __name__ == '__main__':
                         help="Remove track segments that are close to the cathode.")
     parser.add_argument("--track_z_bound", dest="track_z_bound", default=28., type=float,
                         help="Set z bound to keep healthy set of tracks")
+    parser.add_argument("--dx_low_limit", dest="dx_low_limit", default=1E-2, type=float,
+                        help="The lower limit of allowed segment length.")
+    parser.add_argument("--range_low_limit", dest="range_low_limit", default=None, type=float,
+                        help="Set z bound to keep healthy set of tracks")
     parser.add_argument("--out_label", dest="out_label", default="",
                         help="Label for output pkl file")
     parser.add_argument("--fixed_range", dest="fixed_range", default=None, type=float,
@@ -179,15 +193,19 @@ if __name__ == '__main__':
                         help="Number of iterations to run. Overrides epochs.")
     parser.add_argument("--loss_fn", dest="loss_fn", default=None,
                         help="Loss function to use. Named options are SDTW and space_match.")
+    parser.add_argument("--use_cuda", dest="use_cuda", default=False, action="store_true",
+                        help="If using the cuda implementation of softdtw. Warning: may contain a minor bug")
+    parser.add_argument("--softdtw_gamma", dest="softdtw_gamma", default=1, type=float,
+                        help="Gamma of the soft DTW (loss function).")
     parser.add_argument("--max_batch_len", dest="max_batch_len", default=None, type=float,
                         help="Max dx [cm] per batch. If passed, will add tracks to batch until overflow, splitting where needed")
     parser.add_argument("--max_nbatch", dest="max_nbatch", default=None, type=int,
                         help="Upper number of different batches taken from the data, given the max_batch_len. Overrides data_sz.")
     parser.add_argument("--print_input", dest="print_input", default=False, action="store_true",
                         help="print the event and track id per batch.")
-    parser.add_argument("--shift-no-fit", dest="shift_no_fit", default=[], nargs="+", 
+    parser.add_argument("--shift-no-fit", dest="shift_no_fit", default=[], nargs="+",
                         help="Set of params to shift in target sim without fitting them (robustness/separability check).")
-    parser.add_argument("--set-target-vals", dest="set_target_vals", default=[], nargs="+", 
+    parser.add_argument("--set-target-vals", dest="set_target_vals", default=[], nargs="+",
                         help="Explicitly set values of target. Syntax is <param1> <val1> <param2> <val2>...")
     parser.add_argument("--link-vdrift-eField", dest="link_vdrift_eField", default=False, action="store_true",
                         help="Link vdrift and eField in fitting")
@@ -195,7 +213,7 @@ if __name__ == '__main__':
                         help="Optimize the pixel chunk size to reach the specified GPU memory per batch, in MiB")
     parser.add_argument("--skip_pixels", dest="skip_pixels", default=False, action="store_true",
                         help="Iterating only over the pixels of each track (no cartesian product of all pixels x all tracks)")
-    parser.add_argument("--preload", dest="preload", default=False, action="store_true", 
+    parser.add_argument("--preload", dest="preload", default=False, action="store_true",
                         help="If input file contains tracks already cut to dataio standards")
     parser.add_argument("--param_range", dest="param_range", default=None, nargs="+", type=float,
                         help="Param range for loss landscape")
@@ -203,7 +221,7 @@ if __name__ == '__main__':
                         help="Number of steps for loss landscape")
     parser.add_argument("--plot", dest="plot", default=False, action="store_true",
                         help="Makes landscape plot with arrows pointing in -grad direction")
-                        
+
     try:
         args = parser.parse_args()
         retval, status_message = main(args)

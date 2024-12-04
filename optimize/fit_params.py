@@ -346,6 +346,9 @@ class ParamFitter:
                                                                                 return_unique_pix=True)
                                     embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
 
+                                    # make the charge ADC integer
+                                    embed_target[4] = embed_target[4].clone().detach().int()
+
                                 torch.save(embed_target, 'target_' + self.out_label + '/batch' + str(i) + '_ev' + str(int(ev))+ '_target.pt')
 
                             else:
@@ -474,11 +477,12 @@ class ParamFitter:
                 if os.path.exists(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl'):
                     os.remove(f'fit_result/history_{param}_epoch{n_steps-save_freq}_{self.out_label}.pkl')
 
-    def loss_scan_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
+    def loss_scan_all_batch(self, dataloader, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
         """
         Called by loss_landscape.py
-        Old script that gets both loss and gradient, iterating over a parameter range
+        Gets both loss and gradient, iterating over a parameter range
         Can be used to make gradient plot
+        Calculate loss and gradient for all batches at all parameters
         """
         
         if len(self.relevant_params_list) > 1:
@@ -630,6 +634,158 @@ class ParamFitter:
             outname = f"result_{param}/loss_scan_mean_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}"
             with open(outname+".pkl", "wb") as f:
                 pickle.dump(recording, f)
+
+        return recording, outname
+
+    def loss_scan_batch_bk(self, dataloader_sim, dataloader_target, param_range=None, n_steps=10, shuffle=False, save_freq=5, print_freq=1):
+        """
+        Called by loss_landscape.py
+        Gets both loss and gradient, iterating over a parameter range
+        Can be used to make gradient plot
+        Loss and gradient calculated from one batch
+        """
+        
+        if len(self.relevant_params_list) > 1:
+            raise NotImplementedError("Can't do loss scan for more than one variable at a time!")
+
+        param = self.relevant_params_list[0]
+        if param_range is None:
+            param_range = [ranges[param]['down'], ranges[param]['up']]
+        param_vals = torch.linspace(param_range[0], param_range[1], n_steps)
+
+        # make a folder for the pixel target
+        if os.path.exists(f'target_{param}_batch'):
+            shutil.rmtree(f'target_{param}_batch', ignore_errors=True)
+        os.makedirs(f'target_{param}_batch')
+
+        # make a folder for the output
+        if os.path.exists(f'result_{param}'):
+            shutil.rmtree(f'result_{param}', ignore_errors=True)
+        os.makedirs(f'result_{param}')
+
+        # Losses for each batch
+        scan_losses = []
+        scan_grads = []
+
+        # Go over the dataloader
+        i_bt = 0
+        i_ep = 0
+
+        # The scanning loop for parameters
+        with tqdm(total=len(param_vals)) as pbar:
+            for run_no, param_val in enumerate(param_vals):
+                # Get rid of the extra dimension and padding elements for the loaded data
+                # target
+                selected_tracks_bt_torch_target = dataloader_target[i_bt]
+                selected_tracks_bt_torch_target = torch.flatten(selected_tracks_bt_torch_target, start_dim=0, end_dim=1)
+                selected_tracks_bt_torch_target = selected_tracks_bt_torch_target[selected_tracks_bt_torch_target[:, self.track_fields.index("dx")] > 0]
+
+                # sim
+                selected_tracks_bt_torch_sim = dataloader_sim[i_bt]
+                selected_tracks_bt_torch_sim = torch.flatten(selected_tracks_bt_torch_sim, start_dim=0, end_dim=1)
+                selected_tracks_bt_torch_sim = selected_tracks_bt_torch_sim[selected_tracks_bt_torch_sim[:, self.track_fields.index("dx")] > 0]
+
+                # should be the same for target and sim at least when the segments making are the same
+                event_id_map, unique_eventIDs = get_id_map(selected_tracks_bt_torch, self.track_fields, self.device)
+
+                loss_ev_per_val = []
+
+                # set up target per batch
+                for ev in unique_eventIDs:
+                    logger.info("batch: " + str(i_bt) + '; ev:' + str(int(ev)))
+
+                    # target
+                    selected_tracks_torch_target = selected_tracks_bt_torch_target[selected_tracks_bt_torch_target[:, self.track_fields.index("eventID")] == ev]
+                    selected_tracks_torch_target = selected_tracks_torch_target.to(self.device)
+
+                    # sim
+                    selected_tracks_torch_sim = selected_tracks_bt_torch_sim[selected_tracks_bt_torch_sim[:, self.track_fields.index("eventID")] == ev]
+                    selected_tracks_torch_sim = selected_tracks_torch_sim.to(self.device)
+
+                    if shuffle:
+                        target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch_target, self.track_fields,
+                                                                      event_id_map, unique_eventIDs,
+                                                                      return_unique_pix=True)
+                        embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+
+                    else:
+                        # Simulate target and store them
+                        if i_ep == 0:
+                            #No need to store gradients for forward-only pass
+                            with torch.no_grad():
+                                #Update chunk sizes based on memory calculations
+                                self.optimize_batch_memory(self.sim_target, selected_tracks_torch_target)
+
+                                target, pix_target, ticks_list_targ = all_sim(self.sim_target, selected_tracks_torch_target, self.track_fields,
+                                                                            event_id_map, unique_eventIDs,
+                                                                            return_unique_pix=True)
+                                embed_target = embed_adc_list(self.sim_target, target, pix_target, ticks_list_targ)
+
+                                # make the charge ADC integer
+                                embed_target[4] = embed_target[4].clone().detach().int()
+
+                            torch.save(embed_target, f'target_{param}_batch/batch' + str(i_bt) + '_ev' + str(int(ev))+ '_target.pt')
+                        else:
+                            embed_target = torch.load(f'target_{param}_batch/batch' + str(i_bt) + '_ev' + str(int(ev))+ '_target.pt')
+
+                    # Undo normalization (sim -> sim_physics)
+                    for param in self.relevant_params_list:
+                        setattr(self.sim_physics, param, normalize_param(getattr(self.sim_iter, param), param, scheme=self.norm_scheme, undo_norm=True))
+                        if run_no % print_freq == 0:
+                            logger.info(f"{param}, {getattr(self.sim_physics, param)}")
+
+                    # Simulate and get output
+                    #Update chunk sizes based on memory calculations
+                    self.optimize_batch_memory(self.sim_physics, selected_tracks_torch_sim)
+                    output, pix_out, ticks_list_out = all_sim(self.sim_physics, selected_tracks_torch_sim, self.track_fields,
+                                              event_id_map, unique_eventIDs,
+                                              return_unique_pix=True)
+
+                    # Embed both output and target into "full" image space
+                    embed_output = embed_adc_list(self.sim_physics, output, pix_out, ticks_list_out)
+
+                    # Calc loss between simulated and target + backprop
+                    loss = self.loss_fn(embed_output, embed_target, **self.loss_fn_kw)
+
+                    # To be investigated -- sometimes we get nans. Avoid doing a step if so
+                    if not loss.isnan():
+                        loss_ev_per_val.append(loss)
+                    else:
+                        logger.warning("Got NaN as loss!")
+
+                # Average out the loss in different events per batch
+                if len(loss_ev_per_val) > 0:
+                    loss_ev_mean = torch.mean(torch.stack(loss_ev_per_val))
+                    loss_ev_mean.backward()
+
+                    scan_losses.append(loss_ev_mean.item())
+                    scan_grads.append(getattr(self.sim_iter, param).grad.item()) # it might be nan here
+                else:
+                    scan_losses.append(np.nan)
+                    scan_grads.append(np.nan)
+
+
+                # store the scan outcome
+                if run_no % save_freq == 0:
+                    recording = {'param' : param,
+                                 'param_vals': param_vals,
+                                 'norm_factor' : ranges[param]['nom'],
+                                 'target_val' : getattr(self.sim_target, param),
+                                 'losses' : scan_losses,
+                                 'grads' : scan_grads }
+
+                    outname = f"result_{param}/loss_scan_batch{i_bt}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{run_no}"
+                    with open(outname+".pkl", "wb") as f:
+                        pickle.dump(recording, f)
+                    if os.path.exists(f'result_{param}/loss_scan_batch{i_bt}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{run_no-save_freq}.pkl'):
+                        os.remove(f'result_{param}/loss_scan_batch{i_bt}_{param}_{param_vals[0]:.02f}_{param_vals[-1]:.02f}_{run_no-save_freq}.pkl')
+
+                # set batch and epoch index
+                i_bt += 1
+                if i_bt == len(dataloader_sim):
+                    i_ep += 1
+                    i_bt = 0
+                pbar.update(1)
 
         return recording, outname
     
